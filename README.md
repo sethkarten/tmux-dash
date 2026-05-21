@@ -88,6 +88,11 @@ from non-orchestrator sessions every `heartbeat_secs`, classifies each session
 as `active`, `idle`, `waiting`, `blocked`, or `error`, writes a JSONL snapshot,
 and injects a prompt into the orchestrator pane.
 
+Session cards, heartbeat snapshots, and manual messages target each agent's
+main Codex pane (`session:0.0`) instead of tmux's currently active pane. If an
+agent is swapped into the orchestrator view, `tmux-dash` reads that displayed
+pane instead. This keeps side terminals from making a session look idle.
+
 Codex activity markers such as `Working`, `Pursuing goal`, and background-job
 footers keep a session marked `active` even when the visible pane text has not
 changed recently.

@@ -25,6 +25,7 @@ from textual.widget import Widget
 from textual.widgets import Footer, Input, Static
 
 from tmux_dash.orchestration import (
+    CODEX_ACTIVE_RE,
     SessionMonitor,
     SessionSnapshot,
     StatusConfig,
@@ -200,9 +201,10 @@ def get_sessions() -> list[str]:
 
 
 def capture(session: str, n: int = 50) -> str:
+    target = agent_pane_target(session)
     try:
         r = subprocess.run(
-            ["tmux", "capture-pane", "-t", session, "-p", "-S", f"-{n}"],
+            ["tmux", "capture-pane", "-t", target, "-p", "-S", f"-{n}"],
             capture_output=True, text=True, timeout=2,
         )
         clean = strip_ansi(r.stdout)
@@ -210,6 +212,15 @@ def capture(session: str, n: int = 50) -> str:
         return "\n".join(lines[-n:]) if lines else "·"
     except Exception:
         return "(unreachable)"
+
+
+def agent_pane_target(session: str) -> str:
+    if session.startswith("%") or ":" in session:
+        return session
+    if _swapped_session() == session:
+        return ORCH_TARGET
+    main_pane = f"{session}:0.0"
+    return main_pane if _pane_exists(main_pane) else session
 
 
 def _pane_path(target: str) -> str | None:
@@ -365,7 +376,8 @@ def switch_to(session: str) -> bool:
 
 def send_keys(session: str, text: str) -> None:
     restore_orchestrator()
-    subprocess.run(["tmux", "send-keys", "-t", session, text, ""], capture_output=True)
+    target = agent_pane_target(session)
+    subprocess.run(["tmux", "send-keys", "-t", target, text, ""], capture_output=True)
 
 
 def send_text_to_pane(target: str, text: str, submit_keys: list[str] | None = None) -> tuple[bool, str]:
@@ -420,6 +432,34 @@ _CODEX_NOISE = re.compile(
     r'reasoning|session id:|---+|user$|codex$|tokens used|[\d,]+$)',
     re.MULTILINE,
 )
+_IDLE_SUMMARY_RE = re.compile(
+    r"\b(idle|shell prompt|sitting at a prompt|at a prompt|"
+    r"zsh prompt|no active (task|work|goal)|no specific active|"
+    r"no visible active|not showing an active|not .*background job|"
+    r"does not show .*active|nothing active)\b",
+    re.IGNORECASE,
+)
+
+
+def _active_marker_summary(raw: str) -> str:
+    lines = [line.strip() for line in raw.splitlines() if line.strip()]
+    markers = [line for line in lines if CODEX_ACTIVE_RE.search(line)]
+    marker = markers[-1] if markers else "Codex reports active work or background jobs."
+    context = ""
+    for line in reversed(lines):
+        lowered = line.lower().lstrip("•- ").strip()
+        if lowered.startswith(("counts", "status:", "latest status", "latest visible status")):
+            context = line
+            break
+    if context and context != marker:
+        return f"Active: {context} {marker}"
+    return f"Active: {marker}"
+
+
+def _guard_active_summary(raw: str, summary: str) -> str:
+    if CODEX_ACTIVE_RE.search(raw) and _IDLE_SUMMARY_RE.search(summary):
+        return _active_marker_summary(raw)
+    return summary
 
 
 def _summarize_sync(session: str, raw: str) -> str:
@@ -427,11 +467,20 @@ def _summarize_sync(session: str, raw: str) -> str:
     now = time.time()
     if session in _cache:
         ts, cached_hash, summary = _cache[session]
-        if cached_hash == h or (now - ts < SUMMARY_TTL):
+        summary = _guard_active_summary(raw, summary)
+        if cached_hash == h and (now - ts < SUMMARY_TTL):
+            return summary
+        if cached_hash != h and (now - ts < SUMMARY_TTL):
+            if _cache[session][2] != summary:
+                _cache[session] = (now, h, summary)
             return summary
     prompt = (
         "Summarize what this AI coding agent is currently working on "
-        "in 1-2 sentences. Be specific about task and status. No preamble.\n\n"
+        "in 1-2 sentences. Be specific about task and status. "
+        "If the terminal reports Working, Pursuing goal, or background jobs, "
+        "treat the session as active even if a prompt is visible. "
+        "Do not describe a session as idle when background jobs are running. "
+        "No preamble.\n\n"
         f"<terminal>\n{raw[-2000:]}\n</terminal>"
     )
     try:
@@ -451,6 +500,7 @@ def _summarize_sync(session: str, raw: str) -> str:
     except Exception:
         lines = [l for l in raw.splitlines() if l.strip()]
         summary = "  ".join(lines[-2:]) if lines else "·"
+    summary = _guard_active_summary(raw, summary)
     _cache[session] = (now, h, summary)
     return summary
 
@@ -1374,6 +1424,7 @@ class SessionCard(Static):
         self.idx = idx
         self.monitor = monitor
         self._last_raw = ""
+        self._last_summary_at = 0.0
         if session in SUBSESSIONS:
             self.add_class("sub")
 
@@ -1411,10 +1462,12 @@ class SessionCard(Static):
         self.status = snapshot.status
         self.status_reason = snapshot.reason
         self.idle_seconds = snapshot.idle_seconds
-        if raw == self._last_raw:
+        now = time.time()
+        if raw == self._last_raw and now - self._last_summary_at < SUMMARY_TTL:
             return
         self._last_raw = raw
         self.summary = await summarize(self.session_name, raw)
+        self._last_summary_at = time.time()
 
 
 class MsgModal(ModalScreen):

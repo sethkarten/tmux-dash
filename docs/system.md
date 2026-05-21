@@ -17,7 +17,8 @@ flowchart LR
     tui --> term[Side terminal launcher]
     tui --> saver[Screensaver]
 
-    cards --> capture[tmux capture-pane]
+    cards --> resolver[Codex pane resolver]
+    resolver --> capture[tmux capture-pane]
     cards --> summaries[Optional Codex summaries]
     summaries --> codex[codex CLI]
 
@@ -85,6 +86,8 @@ sequenceDiagram
 `tmux-dash` should:
 
 - Capture recent output from configured non-orchestrator sessions.
+- Resolve agent sessions to their main Codex pane (`session:0.0`) rather than
+  tmux's active pane, so side terminals do not drive status labels.
 - Detect coarse state such as `active`, `idle`, `waiting`, `blocked`, and
   `error`.
 - Treat Codex `Working`, `Pursuing goal`, and background-job markers as active
