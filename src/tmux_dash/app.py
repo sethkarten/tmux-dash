@@ -217,9 +217,8 @@ def _pane_path(target: str) -> str | None:
     return path or None
 
 
-def _terminal_option(session: str) -> str:
-    safe = re.sub(r"[^A-Za-z0-9_]", "_", session)
-    return f"@tmux_dash_terminal_{safe}"
+VISIBLE_TERMINAL_OPT = "@tmux_dash_visible_terminal"
+VISIBLE_TERMINAL_SESSION_OPT = "@tmux_dash_visible_terminal_session"
 
 
 def _dashboard_pane() -> str | None:
@@ -235,20 +234,31 @@ def _select_dashboard_pane() -> None:
         _tmux(["select-pane", "-t", pane_id])
 
 
+def _close_visible_terminal() -> None:
+    pane_id = _tmux_out(["show-options", "-gqv", VISIBLE_TERMINAL_OPT])
+    if pane_id and _pane_exists(pane_id):
+        _tmux(["kill-pane", "-t", pane_id])
+    _clear_tmux_option(VISIBLE_TERMINAL_OPT)
+    _clear_tmux_option(VISIBLE_TERMINAL_SESSION_OPT)
+
+
 def open_terminal(session: str) -> tuple[bool, str]:
-    restore_orchestrator()
-    target = f"{session}:0.0"
-    option = _terminal_option(session)
-    existing = _tmux_out(["show-options", "-gqv", option])
-    if existing and _pane_exists(existing):
+    existing = _tmux_out(["show-options", "-gqv", VISIBLE_TERMINAL_OPT])
+    existing_session = _tmux_out(["show-options", "-gqv", VISIBLE_TERMINAL_SESSION_OPT])
+    if existing and existing_session == session and _pane_exists(existing):
         _tmux(["select-pane", "-t", existing])
-        _select_dashboard_pane()
-        return True, f"selected existing terminal {existing}; switch to {session} to use it"
-    if existing:
-        _clear_tmux_option(option)
+        return True, f"selected existing terminal {existing}"
+    _close_visible_terminal()
+
+    if _swapped_session() != session and not switch_to(session):
+        return False, f"could not display {session} in {ORCH_TARGET}"
+
+    target = _pane_id(ORCH_TARGET)
+    if target is None:
+        return False, f"could not resolve {ORCH_TARGET}"
 
     args = ["split-window", "-d", "-v", "-p", "35", "-P", "-F", "#{pane_id}"]
-    path = _pane_path(f"{session}:0.0")
+    path = _pane_path(target)
     if path:
         args.extend(["-c", path])
     args.extend(["-t", target])
@@ -258,10 +268,10 @@ def open_terminal(session: str) -> tuple[bool, str]:
         return False, result.stderr.strip() or "tmux split-window failed"
 
     pane_id = result.stdout.strip().splitlines()[-1] if result.stdout.strip() else "new pane"
-    _set_tmux_option(option, pane_id)
+    _set_tmux_option(VISIBLE_TERMINAL_OPT, pane_id)
+    _set_tmux_option(VISIBLE_TERMINAL_SESSION_OPT, session)
     _tmux(["select-pane", "-t", pane_id])
-    _select_dashboard_pane()
-    return True, f"opened {pane_id} below {target}; switch to {session} to use it"
+    return True, f"opened {pane_id} below {session}"
 
 
 ORCH_PANE_OPT = "@tmux_dash_orch_pane"
@@ -305,11 +315,17 @@ def _orchestrator_pane() -> str | None:
     pane_id = _tmux_out(["show-options", "-gqv", ORCH_PANE_OPT])
     if swapped and pane_id and _pane_exists(pane_id):
         return pane_id
+    if swapped and pane_id and not _pane_exists(pane_id):
+        _clear_tmux_option(ORCH_PANE_OPT)
+        _clear_tmux_option(SWAPPED_SESSION_OPT)
+        pane_id = ""
+        swapped = None
     if swapped and not pane_id:
         pane_id = _pane_id(f"{swapped}:0.0")
         if pane_id:
             _set_tmux_option(ORCH_PANE_OPT, pane_id)
             return pane_id
+        _clear_tmux_option(SWAPPED_SESSION_OPT)
 
     if current_pane:
         _set_tmux_option(ORCH_PANE_OPT, current_pane)
@@ -317,6 +333,7 @@ def _orchestrator_pane() -> str | None:
 
 
 def restore_orchestrator() -> bool:
+    _close_visible_terminal()
     orchestrator_pane = _orchestrator_pane()
     current_pane = _pane_id(ORCH_TARGET)
     if not orchestrator_pane or not current_pane:
@@ -332,6 +349,7 @@ def restore_orchestrator() -> bool:
 
 
 def switch_to(session: str) -> bool:
+    _close_visible_terminal()
     if _swapped_session() == session:
         return restore_orchestrator()
 

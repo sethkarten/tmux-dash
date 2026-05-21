@@ -99,11 +99,10 @@ other sessions directly. `tmux-dash` only supplies context and timing.
 
 ## Side Terminals
 
-Press `t`, then a session number. `tmux-dash` creates a vertical split below
-that agent's Codex pane and starts it in the agent session's current working
-directory. If a terminal for that session already exists, `tmux-dash` selects
-it instead of opening another split. The dashboard stays visible in `orch`;
-switch to the selected agent session when you want to use the terminal.
+Press `t`, then a session number. `tmux-dash` swaps that agent's Codex pane into
+the orchestrator view and creates a vertical terminal split directly below it,
+using the agent pane's current working directory. The dashboard stays visible in
+`orch`; focus moves to the new terminal pane so you can type immediately.
 
 ## Screensaver
 
