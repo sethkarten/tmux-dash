@@ -46,12 +46,12 @@ flowchart LR
 | Side terminal for a session | Current | `tmux-dash` |
 | Animated screensaver with visible session cards | Current | `tmux-dash` |
 | Configurable session order, exclusions, subsessions, and orchestrator target | Current | `tmux-dash` |
-| Idle, blocked, waiting, and error detection | Planned | `tmux-dash` |
-| Status badges on session cards | Planned | `tmux-dash` |
-| JSONL progress ledger | Planned | `tmux-dash` |
-| 10-minute orchestrator heartbeat prompt | Planned | `tmux-dash` scheduler + orchestrator Codex |
+| Idle, blocked, waiting, and error detection | Current | `tmux-dash` |
+| Status badges on session cards | Current | `tmux-dash` |
+| JSONL progress ledger | Current | `tmux-dash` |
+| 10-minute orchestrator heartbeat prompt | Current | `tmux-dash` scheduler + orchestrator Codex |
 
-## Planned Heartbeat Loop
+## Heartbeat Loop
 
 The heartbeat loop should keep all orchestration decisions centered in the
 orchestrator pane. `tmux-dash` collects context and injects a status prompt. The
@@ -99,7 +99,7 @@ The orchestrator Codex should:
 - After approval, send messages directly to the target tmux sessions.
 - Preserve user-defined operational constraints.
 
-## Planned Configuration Shape
+## Configuration Shape
 
 ```toml
 [orchestrator]

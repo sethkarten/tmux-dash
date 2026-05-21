@@ -24,6 +24,16 @@ from textual.screen import ModalScreen, Screen
 from textual.widget import Widget
 from textual.widgets import Footer, Input, Static
 
+from tmux_dash.orchestration import (
+    SessionMonitor,
+    SessionSnapshot,
+    StatusConfig,
+    append_ledger,
+    build_heartbeat_prompt,
+    format_duration,
+    snapshot_to_dict,
+)
+
 # ── Config ────────────────────────────────────────────────────────────────────
 
 DEFAULT_CONFIG_PATH = Path.home() / ".config" / "tmux-dash" / "config.toml"
@@ -55,15 +65,59 @@ def _string_map(value: Any) -> dict[str, str]:
     return {str(key): str(val) for key, val in value.items()}
 
 
+def _config_dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _config_bool(value: Any, default: bool) -> bool:
+    return value if isinstance(value, bool) else default
+
+
+def _config_float(value: Any, default: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _session_labels(value: Any) -> dict[str, str]:
+    sessions = _config_dict(value)
+    labels: dict[str, str] = {}
+    for key, metadata in sessions.items():
+        if isinstance(metadata, dict) and "label" in metadata:
+            labels[str(key)] = str(metadata["label"])
+    return labels
+
+
 _CONFIG = _load_config()
+_ORCH_CONFIG = _config_dict(_CONFIG.get("orchestrator"))
+_STATUS_CONFIG = _config_dict(_CONFIG.get("status"))
 
 AGENT_ORDER = _string_list(_CONFIG.get("agent_order"), [])
 SUBSESSIONS: dict[str, str] = _string_map(_CONFIG.get("subsessions"))
 EXCLUDE: set[str] = set(_string_list(_CONFIG.get("exclude"), ["orch"]))
-ORCH_TARGET = str(_CONFIG.get("orch_target", "orch:0.0"))
+ORCH_TARGET = str(_ORCH_CONFIG.get("target", _CONFIG.get("orch_target", "orch:0.0")))
+SESSION_LABELS = _session_labels(_CONFIG.get("sessions"))
 
-SUMMARY_TTL  = float(_CONFIG.get("summary_ttl", 30.0))
-REFRESH_SECS = float(_CONFIG.get("refresh_secs", 5.0))
+IDLE_AFTER_SECS = _config_float(_ORCH_CONFIG.get("idle_after_secs", _STATUS_CONFIG.get("idle_after_secs")), 900.0)
+STATUS_CONFIG = StatusConfig(
+    idle_after_secs=IDLE_AFTER_SECS,
+    detect_tracebacks=_config_bool(_STATUS_CONFIG.get("detect_tracebacks"), True),
+    detect_repeated_output=_config_bool(_STATUS_CONFIG.get("detect_repeated_output"), True),
+    detect_waiting_prompts=_config_bool(_STATUS_CONFIG.get("detect_waiting_prompts"), True),
+)
+ORCH_MONITOR_CONFIG = StatusConfig(
+    idle_after_secs=_config_float(_ORCH_CONFIG.get("quiet_secs"), 20.0),
+    detect_tracebacks=False,
+    detect_repeated_output=False,
+    detect_waiting_prompts=False,
+)
+
+SUMMARY_TTL  = _config_float(_CONFIG.get("summary_ttl"), 30.0)
+REFRESH_SECS = _config_float(_CONFIG.get("refresh_secs"), 5.0)
+HEARTBEAT_ENABLED = _config_bool(_ORCH_CONFIG.get("enabled"), False)
+HEARTBEAT_SECS = _config_float(_ORCH_CONFIG.get("heartbeat_secs"), 600.0)
+HEARTBEAT_LEDGER_PATH = Path(str(_ORCH_CONFIG.get("ledger_path", "~/.local/state/tmux-dash/orchestrator.jsonl"))).expanduser()
 
 CARD_COLORS = ["cyan", "magenta", "green", "yellow", "blue", "red", "white"]
 CARD_W, CARD_H = 26, 6  # bounce card dimensions in cells
@@ -245,6 +299,44 @@ def switch_to(session: str) -> bool:
 def send_keys(session: str, text: str) -> None:
     restore_orchestrator()
     subprocess.run(["tmux", "send-keys", "-t", session, text, ""], capture_output=True)
+
+
+def send_text_to_pane(target: str, text: str) -> tuple[bool, str]:
+    """Paste multiline text into a tmux pane and submit it."""
+
+    buffer_name = f"tmux-dash-heartbeat-{os.getpid()}-{int(time.time() * 1000)}"
+    try:
+        load = subprocess.run(
+            ["tmux", "load-buffer", "-b", buffer_name, "-"],
+            input=text,
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+        if load.returncode != 0:
+            return False, load.stderr.strip() or "tmux load-buffer failed"
+
+        paste = subprocess.run(
+            ["tmux", "paste-buffer", "-d", "-b", buffer_name, "-t", target],
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+        if paste.returncode != 0:
+            return False, paste.stderr.strip() or "tmux paste-buffer failed"
+
+        submit = subprocess.run(
+            ["tmux", "send-keys", "-t", target, "Enter"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+        if submit.returncode != 0:
+            return False, submit.stderr.strip() or "tmux send-keys failed"
+    except Exception as exc:
+        return False, str(exc)
+
+    return True, "sent"
 
 # ── AI Summarization ──────────────────────────────────────────────────────────
 
@@ -1170,14 +1262,27 @@ CONTROLS = (
     "[cyan][1-9][/cyan] swap  "
     "[cyan][t+#][/cyan] terminal  "
     "[cyan][m+#][/cyan] message  "
+    "[cyan][h][/cyan] heartbeat  "
     "[cyan][b][/cyan] bounce  "
     "[cyan][r][/cyan] refresh  "
     "[cyan][q][/cyan] quit"
 )
 
+STATUS_STYLES = {
+    "active": "bold green",
+    "idle": "bold yellow",
+    "waiting": "bold magenta",
+    "blocked": "bold red",
+    "error": "bold red reverse",
+    "new": "dim",
+}
+
 
 class SessionCard(Static):
     summary: reactive[str] = reactive("…")
+    status: reactive[str] = reactive("new")
+    status_reason: reactive[str] = reactive("waiting for first capture")
+    idle_seconds: reactive[float] = reactive(0.0)
 
     DEFAULT_CSS = """
     SessionCard {
@@ -1190,10 +1295,11 @@ class SessionCard(Static):
     }
     """
 
-    def __init__(self, session: str, idx: int, **kwargs):
+    def __init__(self, session: str, idx: int, monitor: SessionMonitor, **kwargs):
         super().__init__(**kwargs)
         self.session_name = session
         self.idx = idx
+        self.monitor = monitor
         self._last_raw = ""
         if session in SUBSESSIONS:
             self.add_class("sub")
@@ -1201,17 +1307,37 @@ class SessionCard(Static):
     def render(self) -> str:
         parent = SUBSESSIONS.get(self.session_name)
         tag = f" [dim](↳ {parent})[/dim]" if parent else ""
+        label = SESSION_LABELS.get(self.session_name, self.session_name)
+        if label != self.session_name:
+            tag = f" [dim]({self.session_name})[/dim]{tag}"
+        status_style = STATUS_STYLES.get(self.status, "dim")
+        badge = f"[{status_style}]{self.status.upper()}[/]"
+        idle = format_duration(self.idle_seconds)
         return (
             f"[bold cyan][{self.idx}][/bold cyan] "
-            f"[bold]{self.session_name}[/bold]{tag}\n"
-            f"[dim]{self.summary}[/dim]"
+            f"[bold]{label}[/bold]{tag} {badge} [dim]{idle}[/dim]\n"
+            f"[dim]{self.summary}[/dim]\n"
+            f"[dim]{self.status_reason}[/dim]"
         )
 
     def watch_summary(self, _: str) -> None:
         self.refresh()
 
+    def watch_status(self, _: str) -> None:
+        self.refresh()
+
+    def watch_status_reason(self, _: str) -> None:
+        self.refresh()
+
+    def watch_idle_seconds(self, _: float) -> None:
+        self.refresh()
+
     async def refresh_summary(self) -> None:
         raw = capture(self.session_name, 50)
+        snapshot = self.monitor.observe(self.session_name, raw)
+        self.status = snapshot.status
+        self.status_reason = snapshot.reason
+        self.idle_seconds = snapshot.idle_seconds
         if raw == self._last_raw:
             return
         self._last_raw = raw
@@ -1251,38 +1377,117 @@ class Dash(App):
     #controls { height: 1; padding: 0 1; background: $primary-darken-3; dock: top; }
     Grid { grid-size: 2; grid-gutter: 1 1; padding: 1 1; }
     """
-    BINDINGS = [("r", "refresh", "Refresh"), ("q", "quit", "Quit")]
+    BINDINGS = [("h", "heartbeat", "Heartbeat"), ("r", "refresh", "Refresh"), ("q", "quit", "Quit")]
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self._sessions: list[str] = []
         self._pending_msg  = False
         self._pending_term = False
+        self._monitor = SessionMonitor(STATUS_CONFIG)
+        self._orch_monitor = SessionMonitor(ORCH_MONITOR_CONFIG)
 
     def compose(self) -> ComposeResult:
         self._sessions = get_sessions()
         yield Static(CONTROLS, id="controls")
-        yield Grid(*(SessionCard(s, i + 1) for i, s in enumerate(self._sessions)))
+        yield Grid(*(SessionCard(s, i + 1, self._monitor) for i, s in enumerate(self._sessions)))
         yield Footer()
 
     def on_mount(self) -> None:
         self.set_interval(REFRESH_SECS, self.action_refresh)
+        if HEARTBEAT_ENABLED:
+            self.set_interval(HEARTBEAT_SECS, self._scheduled_heartbeat)
         for card in self.query(SessionCard):
             self.run_worker(card.refresh_summary)
 
     async def action_refresh(self) -> None:
+        if HEARTBEAT_ENABLED:
+            await asyncio.to_thread(self._observe_orchestrator)
         sessions = get_sessions()
         if sessions != self._sessions:
             self._sessions = sessions
             grid = self.query_one(Grid)
             grid.query("SessionCard").remove()
             for i, s in enumerate(sessions):
-                card = SessionCard(s, i + 1)
+                card = SessionCard(s, i + 1, self._monitor)
                 await grid.mount(card)
                 self.run_worker(card.refresh_summary)
         else:
             for card in self.query(SessionCard):
                 self.run_worker(card.refresh_summary)
+
+    def _scheduled_heartbeat(self) -> None:
+        self.run_worker(self._run_heartbeat(force=False), group="heartbeat", exclusive=True)
+
+    def action_heartbeat(self) -> None:
+        self.run_worker(self._run_heartbeat(force=True), group="heartbeat", exclusive=True)
+
+    def _collect_snapshots(self) -> list[SessionSnapshot]:
+        snapshots: list[SessionSnapshot] = []
+        for session in get_sessions():
+            raw = capture(session, 80)
+            snapshots.append(self._monitor.observe(session, raw))
+        return snapshots
+
+    def _observe_orchestrator(self) -> SessionSnapshot:
+        raw = capture(ORCH_TARGET, 80)
+        return self._orch_monitor.observe("orchestrator", raw)
+
+    def _orchestrator_is_quiet(self) -> tuple[bool, str]:
+        had_history = "orchestrator" in self._orch_monitor.histories
+        snapshot = self._observe_orchestrator()
+        if snapshot.status == "error":
+            return False, snapshot.reason
+        if not had_history:
+            return True, "orchestrator observed for the first time"
+        quiet_after = ORCH_MONITOR_CONFIG.idle_after_secs
+        if snapshot.changed:
+            return False, "orchestrator pane changed on this check"
+        if snapshot.idle_seconds < quiet_after:
+            return False, f"orchestrator pane changed {format_duration(snapshot.idle_seconds)} ago"
+        return True, f"orchestrator quiet for {format_duration(snapshot.idle_seconds)}"
+
+    def _cached_summaries(self, snapshots: list[SessionSnapshot]) -> dict[str, str]:
+        return {
+            snapshot.session: _cache[snapshot.session][2]
+            for snapshot in snapshots
+            if snapshot.session in _cache
+        }
+
+    async def _run_heartbeat(self, force: bool) -> None:
+        if not HEARTBEAT_ENABLED and not force:
+            return
+
+        snapshots = await asyncio.to_thread(self._collect_snapshots)
+        prompt = build_heartbeat_prompt(
+            snapshots=snapshots,
+            summaries=self._cached_summaries(snapshots),
+            labels=SESSION_LABELS,
+            orch_target=ORCH_TARGET,
+        )
+        event: dict[str, Any] = {
+            "event": "heartbeat",
+            "mode": "manual" if force else "scheduled",
+            "target": ORCH_TARGET,
+            "timestamp": time.time(),
+            "snapshots": [snapshot_to_dict(snapshot) for snapshot in snapshots],
+        }
+
+        if not force:
+            quiet, reason = await asyncio.to_thread(self._orchestrator_is_quiet)
+            if not quiet:
+                event.update({"injected": False, "reason": reason})
+                await asyncio.to_thread(append_ledger, HEARTBEAT_LEDGER_PATH, event)
+                self.notify(f"Heartbeat skipped: {reason}", timeout=4)
+                return
+
+        sent, detail = await asyncio.to_thread(send_text_to_pane, ORCH_TARGET, prompt)
+        event.update({"injected": sent, "reason": detail})
+        await asyncio.to_thread(append_ledger, HEARTBEAT_LEDGER_PATH, event)
+        if sent:
+            self.notify(f"Heartbeat sent to {ORCH_TARGET}", timeout=3)
+        else:
+            self.notify(f"Heartbeat failed: {detail}", severity="error", timeout=5)
 
     def _digit(self, n: int) -> None:
         idx = n - 1

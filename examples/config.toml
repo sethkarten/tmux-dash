@@ -18,6 +18,37 @@ exclude = ["orch"]
 # Pane to swap other session panes into when pressing 1-9.
 orch_target = "orch:0.0"
 
+[orchestrator]
+enabled = true
+target = "orch:0.0"
+heartbeat_secs = 600
+idle_after_secs = 900
+quiet_secs = 20
+ledger_path = "~/.local/state/tmux-dash/orchestrator.jsonl"
+
+[status]
+detect_tracebacks = true
+detect_repeated_output = true
+detect_waiting_prompts = true
+
+[sessions.programBench]
+label = "ProgramBench eval"
+
+[sessions.emulatorBench]
+label = "EmulatorBench"
+
+[sessions.FLE]
+label = "FLE"
+
+[sessions.balrogDAgger]
+label = "BALROG DAgger"
+
+[sessions.balrogRL]
+label = "BALROG RL"
+
+[sessions.chessDAgger]
+label = "Chess DAgger"
+
 # Optional child-session display. These are still normal tmux sessions; this
 # only makes the dashboard render them as children of another session.
 [subsessions]

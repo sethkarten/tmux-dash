@@ -4,7 +4,8 @@ A terminal dashboard for monitoring and steering multiple AI-agent tmux sessions
 
 `tmux-dash` shows live session cards with short AI summaries, lets you swap an
 agent pane into an orchestrator pane, send a message to a session, open a side
-terminal, and launch an animated screensaver with status cards still visible.
+terminal, launch an animated screensaver with status cards still visible, and
+send periodic heartbeat prompts to the orchestrator pane.
 
 ## Requirements
 
@@ -52,6 +53,12 @@ agent_order = ["programBench", "emulatorBench", "FLE"]
 exclude = ["orch"]
 orch_target = "orch:0.0"
 
+[orchestrator]
+enabled = true
+target = "orch:0.0"
+heartbeat_secs = 600
+ledger_path = "~/.local/state/tmux-dash/orchestrator.jsonl"
+
 [subsessions]
 gameboy-dmg-codex = "emulatorBench"
 ```
@@ -68,9 +75,21 @@ TMUX_DASH_CONFIG=/path/to/config.toml tmux-dash
 - `1`-`9`: swap a session into the orchestrator pane
 - `t` then `1`-`9`: open a side terminal for that session
 - `m` then `1`-`9`: send a message to that session
+- `h`: send a heartbeat prompt to the orchestrator pane now
 - `b`: open the screensaver
 - `r`: refresh
 - `q`: quit
+
+## Orchestrator Heartbeat
+
+When `[orchestrator].enabled` is true, `tmux-dash` captures the recent output
+from non-orchestrator sessions every `heartbeat_secs`, classifies each session
+as `active`, `idle`, `waiting`, `blocked`, or `error`, writes a JSONL snapshot,
+and injects a prompt into the orchestrator pane.
+
+The orchestrator Codex is responsible for summarizing progress, recommending
+next actions, asking the user for approval, and sending approved messages to
+other sessions directly. `tmux-dash` only supplies context and timing.
 
 ## Screensaver
 
@@ -81,4 +100,4 @@ starfield, and a bundled ASCII Caramelldansen animation.
 ## System Design
 
 See [docs/system.md](docs/system.md) for the architecture diagram, current
-feature map, and planned orchestrator heartbeat loop.
+feature map, and orchestrator heartbeat loop.
