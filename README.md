@@ -98,8 +98,10 @@ The wallboard shows global phase, operation mode, unit cards, sync-style
 meters, auxiliary/background-job power state, a focused unit diagnostic pane,
 diagnostic bus rows, tri-core decision votes, a link-lattice readout, signal
 waveform, recent terminal signal, active Codex markers, command-protocol
-countdown, command log, and alert cascade. It intentionally fills the screen
-with redundant telemetry so it reads like an overloaded control-room monitor.
+countdown, command log, protocol tape, border-field maps, limiter checks, and
+alert cascade. It intentionally fills the whole screen with redundant telemetry
+so it reads like an overloaded control-room monitor instead of a sparse status
+board.
 It never swaps panes or sends messages. Controls are `r` refresh, `n` next
 target, `p` pause, and `q` quit. The focused unit rotates automatically every
 15 seconds unless you pause the wallboard.

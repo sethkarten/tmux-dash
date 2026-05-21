@@ -3,15 +3,20 @@ from tmux_dash.eva import (
     active_markers,
     authority_state,
     background_job_count,
+    border_field_lines,
     compact_meter,
     diagnostic_bus_lines,
+    digest_stream,
     meter,
+    limiter_check_lines,
     operation_mode,
     phase_for,
     power_state,
+    protocol_tape_lines,
     protocol_log_lines,
     protocol_eta,
     scanline,
+    dense_register_lines,
     sync_lattice_lines,
     sync_percent,
     tail_lines,
@@ -153,6 +158,18 @@ def test_diagnostic_bus_lines_include_each_unit() -> None:
     assert "LINK" in lines[1]
 
 
+def test_border_field_lines_and_register_noise_fill_space() -> None:
+    entry = make_entry("active")
+
+    field = border_field_lines([entry], tick=1, count=3)
+    registers = dense_register_lines(digest_stream([entry]), tick=1, count=2, width=60, prefix="TST")
+
+    assert field[0].startswith("BORDER FIELD")
+    assert len(field) == 3
+    assert registers[0].startswith("TST-00")
+    assert len(registers) == 2
+
+
 def test_sync_lattice_lines_include_power_and_bus_rows() -> None:
     entry = make_entry("active")
     lines = sync_lattice_lines(entry, tick=1)
@@ -162,6 +179,14 @@ def test_sync_lattice_lines_include_power_and_bus_rows() -> None:
     assert lines[2].startswith("BUS-00")
 
 
+def test_limiter_check_lines_fill_unit_diagnostics() -> None:
+    entry = make_entry("active")
+    lines = limiter_check_lines(entry, tick=1, count=4)
+
+    assert lines[0].startswith("LIMITER CHECKLIST")
+    assert len(lines) == 4
+
+
 def test_protocol_log_lines_prioritize_errors() -> None:
     error = make_entry("error")
     active = make_entry("active")
@@ -169,6 +194,13 @@ def test_protocol_log_lines_prioritize_errors() -> None:
     lines = protocol_log_lines([active, error], tick=1)
 
     assert "ERROR" in lines[0]
+
+
+def test_protocol_tape_lines_repeats_log_to_target_count() -> None:
+    lines = protocol_tape_lines([make_entry("active")], tick=1, count=4)
+
+    assert len(lines) == 4
+    assert all(line.startswith((">>", "::")) for line in lines)
 
 
 def test_wall_sessions_excludes_current_tmux_session() -> None:

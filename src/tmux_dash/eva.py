@@ -162,6 +162,81 @@ def scanline(width: int = 42, tick: int = 0) -> str:
     return "".join(chars)
 
 
+def digest_stream(entries: list[WallEntry], fallback: str = "OPS") -> str:
+    stream = "".join(entry.snapshot.digest for entry in entries)
+    return stream or fallback * 32
+
+
+def dense_register_lines(seed: str, tick: int, count: int, width: int = 84, prefix: str = "REG") -> list[str]:
+    source = seed or "0" * 32
+    lines: list[str] = []
+    for row in range(max(0, count)):
+        start = (tick + row * 9) % len(source)
+        chunk = (source[start:] + source + source)[:24].upper()
+        gates = compact_meter((sum(ord(char) for char in chunk) + row * 13 + tick) % 101, 12)
+        trace = scanline(18, tick + row * 2)
+        lines.append(trim_line(f"{prefix}-{row:02d} {chunk[:8]} {chunk[8:16]} {chunk[16:24]} {gates} {trace}", width))
+    return lines
+
+
+def border_field_lines(entries: list[WallEntry], tick: int, count: int, width: int = 84) -> list[str]:
+    if count <= 0:
+        return []
+    lines = ["BORDER FIELD CARTOGRAPHY // SYNC PHASE MAP"]
+    active_entries = entries or [
+        WallEntry(
+            session="none",
+            label="NO UNIT",
+            snapshot=SessionSnapshot("none", "waiting", "no signal", 0, False, 0, "", "0" * 64, 0),
+            raw="",
+            sync=0,
+            background_jobs=0,
+        )
+    ]
+    for row in range(count - 1):
+        entry = active_entries[row % len(active_entries)]
+        label = trim_line(entry.label, 14).ljust(14)
+        phase = (entry.sync + tick + row * 11) % 101
+        left = compact_meter(phase, 16)
+        right = compact_meter(100 - phase, 16)
+        lines.append(trim_line(f"FIELD-{row:02d} {label} {left} CORE {phase:03d} BORDER {right}", width))
+    return lines
+
+
+def limiter_check_lines(entry: WallEntry, tick: int, count: int, width: int = 64) -> list[str]:
+    checks = [
+        "COGNITION BUS",
+        "SANDBOX LINK",
+        "TOKEN FEED",
+        "AUX PROCESS",
+        "PROMPT BUFFER",
+        "RESULT TRACE",
+        "APPROVAL LOCK",
+        "ROLLBACK GATE",
+        "NETWORK SEAL",
+        "HEARTBEAT BUS",
+        "LOG DIGEST",
+        "PANE CAPTURE",
+    ]
+    lines = ["LIMITER CHECKLIST // UNIT INTERNALS"]
+    for row in range(max(0, count - 1)):
+        name = checks[row % len(checks)]
+        level = (entry.sync + len(name) * 7 + tick + row * 5) % 101
+        state = "GREEN" if level >= 55 and entry.snapshot.status == "active" else "WATCH" if level >= 24 else "CUT"
+        lines.append(trim_line(f"{name.ljust(14)} {state.ljust(5)} {compact_meter(level, 16)} {level:03d}", width))
+    return lines
+
+
+def protocol_tape_lines(entries: list[WallEntry], tick: int, count: int, width: int = 44) -> list[str]:
+    base = protocol_log_lines(entries, tick, limit=max(1, count))
+    lines: list[str] = []
+    for idx in range(max(0, count)):
+        line = base[idx % len(base)]
+        prefix = ">>" if (idx + tick) % 3 == 0 else "::"
+        lines.append(trim_line(f"{prefix} {line}", width))
+    return lines
+
+
 def trim_line(line: str, width: int) -> str:
     line = CONTROL_ESCAPE_RE.sub(" ", line)
     line = "".join(char if ord(char) >= 32 else " " for char in line)
@@ -556,7 +631,14 @@ class EvaWall(App[None]):
         for idx, line in enumerate(diagnostic_bus_lines(self._entries, self._tick)):
             style = f"bold {ORANGE}" if idx == 0 else f"dim {CREAM}"
             bus.append(line + "\n", style=style)
-        bus.append(hazard_bar(58, self._tick + 1), style=f"bold {HOT_RED}")
+        bus.append(hazard_bar(58, self._tick + 1) + "\n", style=f"bold {HOT_RED}")
+        for idx, line in enumerate(border_field_lines(self._entries, self._tick, count=12)):
+            style = f"bold {ORANGE}" if idx == 0 else f"dim {DIM_GREEN}"
+            bus.append(line + "\n", style=style)
+        bus.append(hazard_bar(58, self._tick + 2) + "\n", style=f"bold {HOT_RED}")
+        bus.append("LOW-LEVEL REGISTER TRACE\n", style=f"bold {ORANGE}")
+        for line in dense_register_lines(digest_stream(self._entries), self._tick, count=12, prefix="MCR"):
+            bus.append(line + "\n", style=f"dim {CREAM}")
 
         return Panel(Group(table, bus), title="UNIT MATRIX", border_style=PANEL_RED, box=box.SQUARE)
 
@@ -594,9 +676,18 @@ class EvaWall(App[None]):
             style = f"bold {ORANGE}" if idx == 0 else f"dim {CREAM}"
             body.append("  " + line + "\n", style=style)
 
+        body.append("\n")
+        for idx, line in enumerate(limiter_check_lines(entry, self._tick, count=12)):
+            style = f"bold {ORANGE}" if idx == 0 else f"dim {CREAM}"
+            body.append("  " + line + "\n", style=style)
+
         body.append("\nPILOT LINK WAVEFORM\n", style=f"bold {HOT_RED}")
-        for line in signal_wave(entry.snapshot, width=52, rows=10):
+        for line in signal_wave(entry.snapshot, width=52, rows=12):
             body.append("  " + line + "\n", style=f"bold {DIM_GREEN}")
+
+        body.append("\nUNIT MEMORY STRIPE\n", style=f"bold {HOT_RED}")
+        for line in dense_register_lines(entry.snapshot.digest, self._tick, count=8, width=64, prefix="STR"):
+            body.append("  " + line + "\n", style=f"dim {CREAM}")
 
         body.append("\nRECENT TERMINAL SIGNAL\n", style=f"bold {HOT_RED}")
         for line in tail_lines(entry.snapshot.tail, limit=10, width=86):
@@ -632,6 +723,14 @@ class EvaWall(App[None]):
         lines.append("\nCOMMAND LOG\n", style=f"bold {ORANGE}")
         for line in protocol_log_lines(self._entries, self._tick, limit=9):
             lines.append(trim_line(line, 48) + "\n", style=f"dim {CREAM}")
+
+        lines.append("\nPROTOCOL TAPE\n", style=f"bold {ORANGE}")
+        for line in protocol_tape_lines(self._entries, self._tick, count=10, width=48):
+            lines.append(line + "\n", style=f"dim {CREAM}")
+
+        lines.append("\nCORE REGISTER NOISE\n", style=f"bold {ORANGE}")
+        for line in dense_register_lines(digest_stream(self._entries), self._tick, count=10, width=48, prefix="AUX"):
+            lines.append(line + "\n", style=f"dim {DIM_GREEN}")
 
         lines.append("\n" + hazard_bar(30, self._tick) + "\n", style=f"bold {HOT_RED}")
         lines.append(f"PHASE {phase}\n", style=PHASE_STYLES[phase])
