@@ -16,6 +16,7 @@ flowchart LR
     tui --> msg[Manual message modal]
     tui --> term[Side terminal launcher]
     tui --> saver[Screensaver]
+    wall[tmux-eva wallboard] --> resolver
 
     cards --> resolver[Codex pane resolver]
     resolver --> capture[tmux capture-pane]
@@ -51,6 +52,7 @@ flowchart LR
 | Status badges on session cards | Current | `tmux-dash` |
 | JSONL progress ledger | Current | `tmux-dash` |
 | 10-minute orchestrator heartbeat prompt | Current | `tmux-dash` scheduler + orchestrator Codex |
+| Read-only second-monitor wallboard | Current | `tmux-eva` |
 
 ## Heartbeat Loop
 
@@ -131,3 +133,17 @@ label = "BALROG RL"
 Session metadata is optional and should describe subsessions or agent sessions
 only. The orchestrator remains the place where goals, approvals, and decisions
 are discussed.
+
+## Second-Monitor Wallboard
+
+`tmux-eva` is a separate read-only Textual app for a dedicated monitor. It uses
+the same config, session discovery, Codex-pane resolver, and status detector as
+`tmux-dash`, but it does not expose any controls that mutate tmux sessions. It
+renders:
+
+- Global phase: `NOMINAL`, `WATCH`, or `ALERT`.
+- Counts for active, idle, waiting, blocked, and error sessions.
+- Sync-style meters derived from the same status snapshots.
+- A focused target detail panel with recent terminal signal and Codex activity
+  markers.
+- An alert stream for non-active sessions and active background-job markers.

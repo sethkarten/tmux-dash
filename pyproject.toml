@@ -28,6 +28,7 @@ classifiers = [
 
 [project.scripts]
 tmux-dash = "tmux_dash.app:main"
+tmux-eva = "tmux_dash.eva:main"
 
 [dependency-groups]
 dev = [

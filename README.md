@@ -7,6 +7,10 @@ agent pane into an orchestrator pane, send a message to a session, open a side
 terminal, launch an animated screensaver with status cards still visible, and
 send periodic heartbeat prompts to the orchestrator pane.
 
+It also ships `tmux-eva`, a separate read-only wallboard for a second monitor.
+`tmux-eva` uses the same session detection but presents it as a dense
+high-alert telemetry display.
+
 ## Requirements
 
 - Python 3.12+
@@ -80,6 +84,19 @@ TMUX_DASH_CONFIG=/path/to/config.toml tmux-dash
 - `b`: open the screensaver
 - `r`: refresh
 - `q`: quit
+
+## Second-Monitor Wallboard
+
+Run `tmux-eva` for a separate, read-only monitor view:
+
+```bash
+tmux-eva
+```
+
+The wallboard shows global phase, session counts, sync-style meters, a focused
+target pane, recent terminal signal, and an alert stream. It never swaps panes
+or sends messages. Controls are `r` refresh, `n` next target, `p` pause, and
+`q` quit.
 
 ## Orchestrator Heartbeat
 
