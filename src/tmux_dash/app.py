@@ -208,22 +208,26 @@ def capture(session: str, n: int = 50) -> str:
         return "(unreachable)"
 
 
+def _pane_path(target: str) -> str | None:
+    path = _tmux_out(["display-message", "-p", "-t", target, "#{pane_current_path}"])
+    return path or None
+
+
 def open_terminal(session: str) -> tuple[bool, str]:
     restore_orchestrator()
-    result = _tmux(
-        ["split-window", "-h", "-P", "-F", "#{pane_id}", "-t", f"{session}:0.0"]
-    )
+    target = f"{session}:0.0"
+    args = ["split-window", "-d", "-h", "-P", "-F", "#{pane_id}"]
+    path = _pane_path(f"{session}:0.0")
+    if path:
+        args.extend(["-c", path])
+    args.extend(["-t", target])
+
+    result = _tmux(args)
     if result.returncode != 0:
         return False, result.stderr.strip() or "tmux split-window failed"
 
-    pane_id = result.stdout.strip().splitlines()[-1] if result.stdout.strip() else f"{session}:0.1"
-    _tmux(["select-pane", "-t", pane_id])
-    switch = _tmux(["switch-client", "-t", f"{session}:0"])
-    if switch.returncode != 0:
-        detail = switch.stderr.strip() or f"switch manually to {session}:0"
-        return True, f"opened {pane_id}; {detail}"
-
-    return True, f"opened {pane_id}"
+    pane_id = result.stdout.strip().splitlines()[-1] if result.stdout.strip() else "new pane"
+    return True, f"opened {pane_id} next to {target}; switch to {session} to use it"
 
 
 ORCH_PANE_OPT = "@tmux_dash_orch_pane"

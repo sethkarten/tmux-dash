@@ -74,7 +74,7 @@ TMUX_DASH_CONFIG=/path/to/config.toml tmux-dash
 
 - `0`: restore the orchestrator pane
 - `1`-`9`: swap a session into the orchestrator pane
-- `t` then `1`-`9`: open a side terminal in that session and switch to it
+- `t` then `1`-`9`: open a side terminal next to that agent's Codex pane
 - `m` then `1`-`9`: send a message to that session
 - `h`: send a heartbeat prompt to the orchestrator pane now
 - `b`: open the screensaver
@@ -98,9 +98,10 @@ other sessions directly. `tmux-dash` only supplies context and timing.
 
 ## Side Terminals
 
-Press `t`, then a session number. `tmux-dash` creates a horizontal split in that
-agent's tmux session and switches your tmux client to the new pane. The
-dashboard keeps running in the `orch` session; switch back to `orch` to return.
+Press `t`, then a session number. `tmux-dash` creates a horizontal split next to
+that agent's Codex pane and starts it in the agent session's current working
+directory. The dashboard stays visible in `orch`; switch to the selected agent
+session when you want to use the terminal.
 
 ## Screensaver
 

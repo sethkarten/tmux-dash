@@ -43,7 +43,7 @@ flowchart LR
 | Swap a session into the orchestrator pane | Current | `tmux-dash` |
 | Restore the orchestrator pane | Current | `tmux-dash` |
 | Manual message sending to a session | Current | `tmux-dash` |
-| Side terminal split with client switch | Current | `tmux-dash` |
+| Side terminal split beside the selected Codex pane | Current | `tmux-dash` |
 | Animated screensaver with visible session cards | Current | `tmux-dash` |
 | Configurable session order, exclusions, subsessions, and orchestrator target | Current | `tmux-dash` |
 | Idle, blocked, waiting, and error detection | Current | `tmux-dash` |
