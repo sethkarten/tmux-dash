@@ -208,12 +208,22 @@ def capture(session: str, n: int = 50) -> str:
         return "(unreachable)"
 
 
-def open_terminal(session: str) -> None:
+def open_terminal(session: str) -> tuple[bool, str]:
     restore_orchestrator()
-    subprocess.run(
-        ["tmux", "split-window", "-h", "-t", f"{session}:0.0"],
-        capture_output=True,
+    result = _tmux(
+        ["split-window", "-h", "-P", "-F", "#{pane_id}", "-t", f"{session}:0.0"]
     )
+    if result.returncode != 0:
+        return False, result.stderr.strip() or "tmux split-window failed"
+
+    pane_id = result.stdout.strip().splitlines()[-1] if result.stdout.strip() else f"{session}:0.1"
+    _tmux(["select-pane", "-t", pane_id])
+    switch = _tmux(["switch-client", "-t", f"{session}:0"])
+    if switch.returncode != 0:
+        detail = switch.stderr.strip() or f"switch manually to {session}:0"
+        return True, f"opened {pane_id}; {detail}"
+
+    return True, f"opened {pane_id}"
 
 
 ORCH_PANE_OPT = "@tmux_dash_orch_pane"
@@ -1503,8 +1513,11 @@ class Dash(App):
         elif self._pending_term:
             self._pending_term = False
             restore_orchestrator()
-            open_terminal(session)
-            self.notify(f"Opened terminal in {session}", timeout=2)
+            opened, detail = open_terminal(session)
+            if opened:
+                self.notify(f"Opened terminal in {session}: {detail}", timeout=3)
+            else:
+                self.notify(f"Could not open terminal in {session}: {detail}", severity="error", timeout=5)
         else:
             if not switch_to(session):
                 self.notify(f"Could not switch to {session}", severity="error", timeout=3)

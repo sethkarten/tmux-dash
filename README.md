@@ -74,7 +74,7 @@ TMUX_DASH_CONFIG=/path/to/config.toml tmux-dash
 
 - `0`: restore the orchestrator pane
 - `1`-`9`: swap a session into the orchestrator pane
-- `t` then `1`-`9`: open a side terminal for that session
+- `t` then `1`-`9`: open a side terminal in that session and switch to it
 - `m` then `1`-`9`: send a message to that session
 - `h`: send a heartbeat prompt to the orchestrator pane now
 - `b`: open the screensaver
@@ -95,6 +95,12 @@ pane is a plain shell or another tool that submits on Enter.
 The orchestrator Codex is responsible for summarizing progress, recommending
 next actions, asking the user for approval, and sending approved messages to
 other sessions directly. `tmux-dash` only supplies context and timing.
+
+## Side Terminals
+
+Press `t`, then a session number. `tmux-dash` creates a horizontal split in that
+agent's tmux session and switches your tmux client to the new pane. The
+dashboard keeps running in the `orch` session; switch back to `orch` to return.
 
 ## Screensaver
 
