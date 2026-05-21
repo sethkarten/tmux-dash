@@ -118,7 +118,11 @@ REFRESH_SECS = _config_float(_CONFIG.get("refresh_secs"), 5.0)
 HEARTBEAT_ENABLED = _config_bool(_ORCH_CONFIG.get("enabled"), False)
 HEARTBEAT_SECS = _config_float(_ORCH_CONFIG.get("heartbeat_secs"), 600.0)
 HEARTBEAT_LEDGER_PATH = Path(str(_ORCH_CONFIG.get("ledger_path", "~/.local/state/tmux-dash/orchestrator.jsonl"))).expanduser()
-HEARTBEAT_SUBMIT_KEY = str(_ORCH_CONFIG.get("submit_key", "Tab"))
+_HEARTBEAT_SUBMIT_KEYS = _string_list(_ORCH_CONFIG.get("submit_keys"), [])
+if not _HEARTBEAT_SUBMIT_KEYS:
+    legacy_submit_key = str(_ORCH_CONFIG.get("submit_key", "Tab"))
+    _HEARTBEAT_SUBMIT_KEYS = ["Tab", "Enter"] if legacy_submit_key == "Tab" else [legacy_submit_key]
+HEARTBEAT_SUBMIT_KEYS = _HEARTBEAT_SUBMIT_KEYS
 
 CARD_COLORS = ["cyan", "magenta", "green", "yellow", "blue", "red", "white"]
 CARD_W, CARD_H = 26, 6  # bounce card dimensions in cells
@@ -216,7 +220,7 @@ def _pane_path(target: str) -> str | None:
 def open_terminal(session: str) -> tuple[bool, str]:
     restore_orchestrator()
     target = f"{session}:0.0"
-    args = ["split-window", "-d", "-h", "-P", "-F", "#{pane_id}"]
+    args = ["split-window", "-d", "-v", "-P", "-F", "#{pane_id}"]
     path = _pane_path(f"{session}:0.0")
     if path:
         args.extend(["-c", path])
@@ -227,7 +231,8 @@ def open_terminal(session: str) -> tuple[bool, str]:
         return False, result.stderr.strip() or "tmux split-window failed"
 
     pane_id = result.stdout.strip().splitlines()[-1] if result.stdout.strip() else "new pane"
-    return True, f"opened {pane_id} next to {target}; switch to {session} to use it"
+    _tmux(["select-pane", "-t", pane_id])
+    return True, f"opened {pane_id} below {target}; switch to {session} to use it"
 
 
 ORCH_PANE_OPT = "@tmux_dash_orch_pane"
@@ -316,9 +321,10 @@ def send_keys(session: str, text: str) -> None:
     subprocess.run(["tmux", "send-keys", "-t", session, text, ""], capture_output=True)
 
 
-def send_text_to_pane(target: str, text: str, submit_key: str = "Enter") -> tuple[bool, str]:
+def send_text_to_pane(target: str, text: str, submit_keys: list[str] | None = None) -> tuple[bool, str]:
     """Paste multiline text into a tmux pane and submit it."""
 
+    submit_keys = submit_keys if submit_keys is not None else ["Enter"]
     buffer_name = f"tmux-dash-heartbeat-{os.getpid()}-{int(time.time() * 1000)}"
     try:
         load = subprocess.run(
@@ -340,15 +346,18 @@ def send_text_to_pane(target: str, text: str, submit_key: str = "Enter") -> tupl
         if paste.returncode != 0:
             return False, paste.stderr.strip() or "tmux paste-buffer failed"
 
-        if submit_key:
+        for key in submit_keys:
+            if not key:
+                continue
             submit = subprocess.run(
-                ["tmux", "send-keys", "-t", target, submit_key],
+                ["tmux", "send-keys", "-t", target, key],
                 capture_output=True,
                 text=True,
                 timeout=3,
             )
             if submit.returncode != 0:
                 return False, submit.stderr.strip() or "tmux send-keys failed"
+            time.sleep(0.2)
     except Exception as exc:
         return False, str(exc)
 
@@ -1498,7 +1507,7 @@ class Dash(App):
                 self.notify(f"Heartbeat skipped: {reason}", timeout=4)
                 return
 
-        sent, detail = await asyncio.to_thread(send_text_to_pane, ORCH_TARGET, prompt, HEARTBEAT_SUBMIT_KEY)
+        sent, detail = await asyncio.to_thread(send_text_to_pane, ORCH_TARGET, prompt, HEARTBEAT_SUBMIT_KEYS)
         event.update({"injected": sent, "reason": detail})
         await asyncio.to_thread(append_ledger, HEARTBEAT_LEDGER_PATH, event)
         if sent:

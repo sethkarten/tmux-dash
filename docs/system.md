@@ -43,7 +43,7 @@ flowchart LR
 | Swap a session into the orchestrator pane | Current | `tmux-dash` |
 | Restore the orchestrator pane | Current | `tmux-dash` |
 | Manual message sending to a session | Current | `tmux-dash` |
-| Side terminal split beside the selected Codex pane | Current | `tmux-dash` |
+| Side terminal split below the selected Codex pane | Current | `tmux-dash` |
 | Animated screensaver with visible session cards | Current | `tmux-dash` |
 | Configurable session order, exclusions, subsessions, and orchestrator target | Current | `tmux-dash` |
 | Idle, blocked, waiting, and error detection | Current | `tmux-dash` |
@@ -108,7 +108,7 @@ target = "orch:0.0"
 heartbeat_secs = 600
 idle_after_secs = 900
 quiet_secs = 20
-submit_key = "Tab"
+submit_keys = ["Tab", "Enter"]
 ledger_path = "~/.local/state/tmux-dash/orchestrator.jsonl"
 
 [status]
