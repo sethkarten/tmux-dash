@@ -1,0 +1,41 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "tmux-dash"
+version = "0.1.0"
+description = "A Textual dashboard for monitoring and steering multi-agent tmux sessions."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+authors = [
+    { name = "tmux-dash contributors" },
+]
+dependencies = [
+    "textual>=8.0.0",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Framework :: AsyncIO",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: System :: Monitoring",
+    "Topic :: Terminals",
+]
+
+[project.scripts]
+tmux-dash = "tmux_dash.app:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tmux_dash"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/tmux_dash/assets/caramelldansen.txt" = "tmux_dash/assets/caramelldansen.txt"

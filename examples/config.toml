@@ -1,0 +1,24 @@
+# Optional tmux-dash configuration.
+# Copy to ~/.config/tmux-dash/config.toml or run with:
+# TMUX_DASH_CONFIG=/path/to/config.toml tmux-dash
+
+# Sessions shown first, in this exact order when they exist.
+agent_order = [
+  "programBench",
+  "emulatorBench",
+  "FLE",
+  "balrogDAgger",
+  "balrogRL",
+  "chessDAgger",
+]
+
+# Sessions omitted from the dashboard.
+exclude = ["orch"]
+
+# Pane to swap other session panes into when pressing 1-9.
+orch_target = "orch:0.0"
+
+# Optional child-session display. These are still normal tmux sessions; this
+# only makes the dashboard render them as children of another session.
+[subsessions]
+gameboy-dmg-codex = "emulatorBench"

@@ -1,0 +1,1 @@
+"""Bundled tmux-dash assets."""
