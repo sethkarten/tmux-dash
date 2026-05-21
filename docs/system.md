@@ -139,11 +139,19 @@ are discussed.
 `tmux-eva` is a separate read-only Textual app for a dedicated monitor. It uses
 the same config, session discovery, Codex-pane resolver, and status detector as
 `tmux-dash`, but it does not expose any controls that mutate tmux sessions. It
-renders:
+uses an original black/red/orange/green command-system theme and renders:
 
 - Global phase: `NOMINAL`, `WATCH`, or `ALERT`.
+- Operation mode: `NORMAL OPERATION`, `OBSERVATION WATCH`,
+  `COMMAND INTERRUPT`, or `FAULT CASCADE`.
 - Counts for active, idle, waiting, blocked, and error sessions.
-- Sync-style meters derived from the same status snapshots.
-- A focused target detail panel with recent terminal signal and Codex activity
-  markers.
-- An alert stream for non-active sessions and active background-job markers.
+- Unit rows for each session with sync-style meters, power state, and
+  authorization/border state.
+- A focused unit diagnostic panel with a derived signal waveform, recent
+  terminal signal, active Codex markers, and auxiliary background-job count.
+- A tri-core decision panel that votes from logic, ops, and link perspectives.
+- A command-protocol countdown based on the heartbeat cadence.
+- An alert cascade for non-active sessions and active background-job markers.
+
+The focused unit rotates every 15 seconds, while `n` can still advance it
+manually and `p` can pause the wallboard.

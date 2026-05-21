@@ -9,7 +9,8 @@ send periodic heartbeat prompts to the orchestrator pane.
 
 It also ships `tmux-eva`, a separate read-only wallboard for a second monitor.
 `tmux-eva` uses the same session detection but presents it as a dense
-high-alert telemetry display.
+black/red/orange/green command-system display with unit diagnostics, alert
+cascades, sync meters, and command-protocol timing.
 
 ## Requirements
 
@@ -93,10 +94,13 @@ Run `tmux-eva` for a separate, read-only monitor view:
 tmux-eva
 ```
 
-The wallboard shows global phase, session counts, sync-style meters, a focused
-target pane, recent terminal signal, and an alert stream. It never swaps panes
-or sends messages. Controls are `r` refresh, `n` next target, `p` pause, and
-`q` quit.
+The wallboard shows global phase, operation mode, unit cards, sync-style
+meters, auxiliary/background-job power state, a focused unit diagnostic pane,
+tri-core decision votes, a signal waveform, recent terminal signal, active
+Codex markers, command-protocol countdown, and an alert cascade. It never swaps
+panes or sends messages. Controls are `r` refresh, `n` next target, `p` pause,
+and `q` quit. The focused unit rotates automatically every 15 seconds unless
+you pause the wallboard.
 
 ## Orchestrator Heartbeat
 
