@@ -22,10 +22,10 @@ From a local checkout:
 uv tool install .
 ```
 
-From GitHub after the repository is published:
+From GitHub:
 
 ```bash
-uv tool install git+https://github.com/<owner>/tmux-dash
+uv tool install git+https://github.com/sethkarten/tmux-dash
 ```
 
 For editable development:
@@ -78,15 +78,7 @@ The screensaver keeps session cards visible while rotating background modes,
 including an autoplay subway runner, bouncing cards, matrix rain, equalizer,
 starfield, and a bundled ASCII Caramelldansen animation.
 
-## Publish To GitHub
+## System Design
 
-This checkout is ready to become a GitHub repo:
-
-```bash
-git init
-git add .
-git commit -m "Initial tmux-dash package"
-gh repo create tmux-dash --public --source=. --remote=origin --push
-```
-
-Review the license and package metadata before making it public.
+See [docs/system.md](docs/system.md) for the architecture diagram, current
+feature map, and planned orchestrator heartbeat loop.
