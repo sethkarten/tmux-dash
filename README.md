@@ -57,6 +57,7 @@ orch_target = "orch:0.0"
 enabled = true
 target = "orch:0.0"
 heartbeat_secs = 600
+submit_key = "Tab"
 ledger_path = "~/.local/state/tmux-dash/orchestrator.jsonl"
 
 [subsessions]
@@ -86,6 +87,10 @@ When `[orchestrator].enabled` is true, `tmux-dash` captures the recent output
 from non-orchestrator sessions every `heartbeat_secs`, classifies each session
 as `active`, `idle`, `waiting`, `blocked`, or `error`, writes a JSONL snapshot,
 and injects a prompt into the orchestrator pane.
+
+Codex treats multiline pasted prompts as queued paste content, so the default
+heartbeat submit key is `Tab`. Set `submit_key = "Enter"` if your orchestrator
+pane is a plain shell or another tool that submits on Enter.
 
 The orchestrator Codex is responsible for summarizing progress, recommending
 next actions, asking the user for approval, and sending approved messages to

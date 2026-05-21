@@ -107,6 +107,8 @@ enabled = true
 target = "orch:0.0"
 heartbeat_secs = 600
 idle_after_secs = 900
+quiet_secs = 20
+submit_key = "Tab"
 ledger_path = "~/.local/state/tmux-dash/orchestrator.jsonl"
 
 [status]

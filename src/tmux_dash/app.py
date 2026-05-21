@@ -118,6 +118,7 @@ REFRESH_SECS = _config_float(_CONFIG.get("refresh_secs"), 5.0)
 HEARTBEAT_ENABLED = _config_bool(_ORCH_CONFIG.get("enabled"), False)
 HEARTBEAT_SECS = _config_float(_ORCH_CONFIG.get("heartbeat_secs"), 600.0)
 HEARTBEAT_LEDGER_PATH = Path(str(_ORCH_CONFIG.get("ledger_path", "~/.local/state/tmux-dash/orchestrator.jsonl"))).expanduser()
+HEARTBEAT_SUBMIT_KEY = str(_ORCH_CONFIG.get("submit_key", "Tab"))
 
 CARD_COLORS = ["cyan", "magenta", "green", "yellow", "blue", "red", "white"]
 CARD_W, CARD_H = 26, 6  # bounce card dimensions in cells
@@ -301,7 +302,7 @@ def send_keys(session: str, text: str) -> None:
     subprocess.run(["tmux", "send-keys", "-t", session, text, ""], capture_output=True)
 
 
-def send_text_to_pane(target: str, text: str) -> tuple[bool, str]:
+def send_text_to_pane(target: str, text: str, submit_key: str = "Enter") -> tuple[bool, str]:
     """Paste multiline text into a tmux pane and submit it."""
 
     buffer_name = f"tmux-dash-heartbeat-{os.getpid()}-{int(time.time() * 1000)}"
@@ -325,14 +326,15 @@ def send_text_to_pane(target: str, text: str) -> tuple[bool, str]:
         if paste.returncode != 0:
             return False, paste.stderr.strip() or "tmux paste-buffer failed"
 
-        submit = subprocess.run(
-            ["tmux", "send-keys", "-t", target, "Enter"],
-            capture_output=True,
-            text=True,
-            timeout=3,
-        )
-        if submit.returncode != 0:
-            return False, submit.stderr.strip() or "tmux send-keys failed"
+        if submit_key:
+            submit = subprocess.run(
+                ["tmux", "send-keys", "-t", target, submit_key],
+                capture_output=True,
+                text=True,
+                timeout=3,
+            )
+            if submit.returncode != 0:
+                return False, submit.stderr.strip() or "tmux send-keys failed"
     except Exception as exc:
         return False, str(exc)
 
@@ -1482,7 +1484,7 @@ class Dash(App):
                 self.notify(f"Heartbeat skipped: {reason}", timeout=4)
                 return
 
-        sent, detail = await asyncio.to_thread(send_text_to_pane, ORCH_TARGET, prompt)
+        sent, detail = await asyncio.to_thread(send_text_to_pane, ORCH_TARGET, prompt, HEARTBEAT_SUBMIT_KEY)
         event.update({"injected": sent, "reason": detail})
         await asyncio.to_thread(append_ledger, HEARTBEAT_LEDGER_PATH, event)
         if sent:
