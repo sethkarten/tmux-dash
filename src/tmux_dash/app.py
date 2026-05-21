@@ -1248,7 +1248,8 @@ class BounceScreen(Screen):
         yield Static(" [dim]any key to exit[/dim]", id="bounce-hint")
 
     def on_key(self, _: events.Key) -> None:
-        self.dismiss()
+        if self.app.screen is self:
+            self.dismiss()
 
     DEFAULT_CSS = """
     #bounce-hint { dock: bottom; height: 1; padding: 0 1; background: $surface; }
