@@ -87,6 +87,8 @@ sequenceDiagram
 - Capture recent output from configured non-orchestrator sessions.
 - Detect coarse state such as `active`, `idle`, `waiting`, `blocked`, and
   `error`.
+- Treat Codex `Working`, `Pursuing goal`, and background-job markers as active
+  work even when the visible pane text is stable.
 - Record heartbeat snapshots to a local JSONL progress ledger.
 - Inject a concise status prompt into `orch:0.0` on a configurable interval.
 - Avoid injecting while the orchestrator pane appears busy, unless manually

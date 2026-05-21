@@ -59,6 +59,17 @@ WAITING_RE = re.compile(
     r"^\s*(>|>>>|\$|%|❯|›)\s*$)",
     re.IGNORECASE | re.MULTILINE,
 )
+CODEX_ACTIVE_RE = re.compile(
+    r"(\bWorking \(|"
+    r"\bPursuing goal\b|"
+    r"\bWaiting for background terminal\b|"
+    r"\bbackground terminal\b|"
+    r"\bbackground terminals\b|"
+    r"\bbackground job\b|"
+    r"\bbackground jobs\b|"
+    r"\b\d+\s+backgr)",
+    re.IGNORECASE,
+)
 
 
 def observe_session(
@@ -114,6 +125,8 @@ def classify_capture(
         return "error", "error-like output in recent pane text"
     if BLOCKED_RE.search(tail):
         return "blocked", "blocked or approval-related text detected"
+    if CODEX_ACTIVE_RE.search(tail):
+        return "active", "Codex reports active work or background jobs"
     if config.detect_waiting_prompts and WAITING_RE.search(tail):
         return "waiting", "prompt appears to be waiting for input"
     if idle_seconds >= config.idle_after_secs:

@@ -88,6 +88,10 @@ from non-orchestrator sessions every `heartbeat_secs`, classifies each session
 as `active`, `idle`, `waiting`, `blocked`, or `error`, writes a JSONL snapshot,
 and injects a prompt into the orchestrator pane.
 
+Codex activity markers such as `Working`, `Pursuing goal`, and background-job
+footers keep a session marked `active` even when the visible pane text has not
+changed recently.
+
 Codex treats multiline pasted prompts as queued paste content, so the default
 heartbeat submit sequence is `Tab` then `Enter`. Set `submit_keys = ["Enter"]`
 if your orchestrator pane is a plain shell or another tool that submits on
