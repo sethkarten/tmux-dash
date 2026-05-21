@@ -217,10 +217,37 @@ def _pane_path(target: str) -> str | None:
     return path or None
 
 
+def _terminal_option(session: str) -> str:
+    safe = re.sub(r"[^A-Za-z0-9_]", "_", session)
+    return f"@tmux_dash_terminal_{safe}"
+
+
+def _dashboard_pane() -> str | None:
+    pane_id = os.environ.get("TMUX_PANE")
+    if pane_id and _pane_exists(pane_id):
+        return pane_id
+    return None
+
+
+def _select_dashboard_pane() -> None:
+    pane_id = _dashboard_pane()
+    if pane_id:
+        _tmux(["select-pane", "-t", pane_id])
+
+
 def open_terminal(session: str) -> tuple[bool, str]:
     restore_orchestrator()
     target = f"{session}:0.0"
-    args = ["split-window", "-d", "-v", "-P", "-F", "#{pane_id}"]
+    option = _terminal_option(session)
+    existing = _tmux_out(["show-options", "-gqv", option])
+    if existing and _pane_exists(existing):
+        _tmux(["select-pane", "-t", existing])
+        _select_dashboard_pane()
+        return True, f"selected existing terminal {existing}; switch to {session} to use it"
+    if existing:
+        _clear_tmux_option(option)
+
+    args = ["split-window", "-d", "-v", "-p", "35", "-P", "-F", "#{pane_id}"]
     path = _pane_path(f"{session}:0.0")
     if path:
         args.extend(["-c", path])
@@ -231,7 +258,9 @@ def open_terminal(session: str) -> tuple[bool, str]:
         return False, result.stderr.strip() or "tmux split-window failed"
 
     pane_id = result.stdout.strip().splitlines()[-1] if result.stdout.strip() else "new pane"
+    _set_tmux_option(option, pane_id)
     _tmux(["select-pane", "-t", pane_id])
+    _select_dashboard_pane()
     return True, f"opened {pane_id} below {target}; switch to {session} to use it"
 
 
