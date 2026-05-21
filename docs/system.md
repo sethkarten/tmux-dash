@@ -147,10 +147,14 @@ uses an original black/red/orange/green command-system theme and renders:
 - Counts for active, idle, waiting, blocked, and error sessions.
 - Unit rows for each session with sync-style meters, power state, and
   authorization/border state.
+- Diagnostic bus rows under the unit matrix so the wallboard stays visually
+  dense even when there are only a few active sessions.
 - A focused unit diagnostic panel with a derived signal waveform, recent
-  terminal signal, active Codex markers, and auxiliary background-job count.
+  terminal signal, active Codex markers, link-lattice rows, and auxiliary
+  background-job count.
 - A tri-core decision panel that votes from logic, ops, and link perspectives.
 - A command-protocol countdown based on the heartbeat cadence.
+- A command log derived from current session status and auxiliary job state.
 - An alert cascade for non-active sessions and active background-job markers.
 
 The focused unit rotates every 15 seconds, while `n` can still advance it

@@ -3,12 +3,16 @@ from tmux_dash.eva import (
     active_markers,
     authority_state,
     background_job_count,
+    compact_meter,
+    diagnostic_bus_lines,
     meter,
     operation_mode,
     phase_for,
     power_state,
+    protocol_log_lines,
     protocol_eta,
     scanline,
+    sync_lattice_lines,
     sync_percent,
     tail_lines,
     tri_core_votes,
@@ -78,6 +82,11 @@ def test_meter_clamps_percent() -> None:
     assert meter(-10, width=5) == "[.....] 000%"
 
 
+def test_compact_meter_clamps_without_label() -> None:
+    assert compact_meter(150, width=5) == "|||||"
+    assert compact_meter(-10, width=5) == "....."
+
+
 def test_unit_id_formats_unit_numbers() -> None:
     assert unit_id(3) == "UNIT-03"
 
@@ -133,6 +142,33 @@ def test_tri_core_votes_reflect_status_and_sync() -> None:
 def test_protocol_eta_handles_disabled_and_countdown() -> None:
     assert protocol_eta(100, heartbeat_enabled=False, heartbeat_secs=600) == "COMMAND PROTOCOL OFFLINE"
     assert protocol_eta(590, heartbeat_enabled=True, heartbeat_secs=600) == "NEXT COMMAND PROTOCOL T-00:10"
+
+
+def test_diagnostic_bus_lines_include_each_unit() -> None:
+    entry = make_entry("active")
+    lines = diagnostic_bus_lines([entry], tick=1)
+
+    assert lines[0].startswith("SUBSYSTEM BUS")
+    assert "UNIT-01" in lines[1]
+    assert "LINK" in lines[1]
+
+
+def test_sync_lattice_lines_include_power_and_bus_rows() -> None:
+    entry = make_entry("active")
+    lines = sync_lattice_lines(entry, tick=1)
+
+    assert lines[0].startswith("LINK LATTICE")
+    assert "POWER" in lines[1]
+    assert lines[2].startswith("BUS-00")
+
+
+def test_protocol_log_lines_prioritize_errors() -> None:
+    error = make_entry("error")
+    active = make_entry("active")
+
+    lines = protocol_log_lines([active, error], tick=1)
+
+    assert "ERROR" in lines[0]
 
 
 def test_wall_sessions_excludes_current_tmux_session() -> None:

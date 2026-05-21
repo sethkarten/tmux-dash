@@ -96,11 +96,13 @@ tmux-eva
 
 The wallboard shows global phase, operation mode, unit cards, sync-style
 meters, auxiliary/background-job power state, a focused unit diagnostic pane,
-tri-core decision votes, a signal waveform, recent terminal signal, active
-Codex markers, command-protocol countdown, and an alert cascade. It never swaps
-panes or sends messages. Controls are `r` refresh, `n` next target, `p` pause,
-and `q` quit. The focused unit rotates automatically every 15 seconds unless
-you pause the wallboard.
+diagnostic bus rows, tri-core decision votes, a link-lattice readout, signal
+waveform, recent terminal signal, active Codex markers, command-protocol
+countdown, command log, and alert cascade. It intentionally fills the screen
+with redundant telemetry so it reads like an overloaded control-room monitor.
+It never swaps panes or sends messages. Controls are `r` refresh, `n` next
+target, `p` pause, and `q` quit. The focused unit rotates automatically every
+15 seconds unless you pause the wallboard.
 
 ## Orchestrator Heartbeat
 

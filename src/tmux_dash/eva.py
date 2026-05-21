@@ -136,6 +136,12 @@ def meter(percent: int, width: int = 18) -> str:
     return "[" + ("|" * filled).ljust(width, ".") + f"] {percent:03d}%"
 
 
+def compact_meter(percent: int, width: int = 10) -> str:
+    percent = max(0, min(100, percent))
+    filled = round(width * percent / 100)
+    return ("|" * filled).ljust(width, ".")
+
+
 def hazard_bar(width: int = 26, tick: int = 0) -> str:
     if width <= 0:
         return ""
@@ -259,6 +265,63 @@ def power_grid(entries: list[WallEntry]) -> dict[str, int]:
         "background_jobs": sum(entry.background_jobs for entry in entries),
         "avg_sync": int(sum(entry.sync for entry in entries) / len(entries)) if entries else 0,
     }
+
+
+def diagnostic_bus_lines(entries: list[WallEntry], tick: int, width: int = 82) -> list[str]:
+    if not entries:
+        return ["NO UNIT TELEMETRY AVAILABLE"]
+    lines = ["SUBSYSTEM BUS // PLUG DEPTH // BORDER INTEGRITY"]
+    for idx, entry in enumerate(entries, start=1):
+        label = trim_line(entry.label, 18).ljust(18)
+        border = authority_state(entry.snapshot).ljust(11)
+        power = power_state(entry).ljust(8)
+        digest = entry.snapshot.digest[:8].upper()
+        pulse = scanline(18, tick + idx)
+        line = (
+            f"{unit_id(idx)} {label} LINK {compact_meter(entry.sync, 8)} "
+            f"PWR {power} BORDER {border} SIG {digest} {pulse}"
+        )
+        lines.append(trim_line(line, width))
+    return lines
+
+
+def sync_lattice_lines(entry: WallEntry, tick: int, width: int = 62) -> list[str]:
+    digest = entry.snapshot.digest or "0"
+    seeds = [ord(char) for char in digest]
+    if not seeds:
+        seeds = [0]
+    lines = [
+        "LINK LATTICE // INTERNAL BUS",
+        f"POWER {power_state(entry)}  BORDER {authority_state(entry.snapshot)}  AUX {entry.background_jobs}",
+    ]
+    for row in range(8):
+        seed = seeds[row % len(seeds)]
+        level = (entry.sync + seed + tick + row * 7) % 101
+        scan = scanline(22, tick + row)
+        line = f"BUS-{row:02d} {compact_meter(level, 12)} {level:03d}% {scan}"
+        lines.append(trim_line(line, width))
+    return lines
+
+
+def protocol_log_lines(entries: list[WallEntry], tick: int, limit: int = 10) -> list[str]:
+    ranked = sorted(
+        entries,
+        key=lambda entry: (
+            STATUS_PRIORITY.get(entry.snapshot.status, 9),
+            -entry.background_jobs,
+            entry.session,
+        ),
+    )
+    lines: list[str] = []
+    for offset, entry in enumerate(ranked[:limit]):
+        stamp = f"T+{(tick * 5 + offset * 17) % 600:03d}"
+        status = entry.snapshot.status.upper().ljust(7)
+        label = trim_line(entry.label, 18).ljust(18)
+        detail = trim_line(f"{power_state(entry)} {authority_state(entry.snapshot)} {entry.snapshot.reason}", 44)
+        lines.append(f"{stamp} {status} {label} {detail}")
+    if not lines:
+        lines.append("T+000 WAIT    NO UNITS            NO SIGNAL")
+    return lines
 
 
 def current_tmux_session() -> str | None:
@@ -488,7 +551,14 @@ class EvaWall(App[None]):
         if not self._entries:
             table.add_row("UNIT-00", "NO TMUX AGENT SESSIONS", "WAIT", meter(0, 10), "OFFLINE", "NO SIGNAL")
 
-        return Panel(table, title="UNIT MATRIX", border_style=PANEL_RED, box=box.SQUARE)
+        bus = Text()
+        bus.append("\n" + hazard_bar(58, self._tick) + "\n", style=f"bold {HOT_RED}")
+        for idx, line in enumerate(diagnostic_bus_lines(self._entries, self._tick)):
+            style = f"bold {ORANGE}" if idx == 0 else f"dim {CREAM}"
+            bus.append(line + "\n", style=style)
+        bus.append(hazard_bar(58, self._tick + 1), style=f"bold {HOT_RED}")
+
+        return Panel(Group(table, bus), title="UNIT MATRIX", border_style=PANEL_RED, box=box.SQUARE)
 
     def _render_focus(self) -> RenderableType:
         entry = self._focused_entry()
@@ -519,12 +589,17 @@ class EvaWall(App[None]):
         )
 
         body = Text()
+        body.append("\n")
+        for idx, line in enumerate(sync_lattice_lines(entry, self._tick)):
+            style = f"bold {ORANGE}" if idx == 0 else f"dim {CREAM}"
+            body.append("  " + line + "\n", style=style)
+
         body.append("\nPILOT LINK WAVEFORM\n", style=f"bold {HOT_RED}")
-        for line in signal_wave(entry.snapshot, width=48, rows=7):
+        for line in signal_wave(entry.snapshot, width=52, rows=10):
             body.append("  " + line + "\n", style=f"bold {DIM_GREEN}")
 
         body.append("\nRECENT TERMINAL SIGNAL\n", style=f"bold {HOT_RED}")
-        for line in tail_lines(entry.snapshot.tail, limit=8, width=86):
+        for line in tail_lines(entry.snapshot.tail, limit=10, width=86):
             body.append("  " + line + "\n", style=GREEN)
 
         markers = active_markers(entry.raw)
@@ -553,6 +628,10 @@ class EvaWall(App[None]):
         lines.append(f"AUX JOBS    {grid['background_jobs']:02d}\n", style=f"bold {ORANGE}")
         lines.append(f"AUTH WAIT   {grid['waiting_auth']:02d}\n", style=STATUS_STYLES["waiting"])
         lines.append(f"FAULTS      {grid['faults']:02d}\n", style=STATUS_STYLES["error"] if grid["faults"] else "white")
+
+        lines.append("\nCOMMAND LOG\n", style=f"bold {ORANGE}")
+        for line in protocol_log_lines(self._entries, self._tick, limit=9):
+            lines.append(trim_line(line, 48) + "\n", style=f"dim {CREAM}")
 
         lines.append("\n" + hazard_bar(30, self._tick) + "\n", style=f"bold {HOT_RED}")
         lines.append(f"PHASE {phase}\n", style=PHASE_STYLES[phase])
