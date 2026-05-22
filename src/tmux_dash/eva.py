@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 import os
 import re
 import subprocess
@@ -142,6 +143,12 @@ def compact_meter(percent: int, width: int = 10) -> str:
     return ("|" * filled).ljust(width, ".")
 
 
+def sync_flux(entry: WallEntry, tick: int, amplitude: int = 6) -> int:
+    seed = sum(ord(char) for char in entry.snapshot.digest[:12])
+    wobble = ((seed + tick * 7) % (amplitude * 2 + 1)) - amplitude
+    return max(0, min(100, entry.sync + wobble))
+
+
 def hazard_bar(width: int = 26, tick: int = 0) -> str:
     if width <= 0:
         return ""
@@ -160,6 +167,34 @@ def scanline(width: int = 42, tick: int = 0) -> str:
     if pos + 1 < width:
         chars[pos + 1] = "="
     return "".join(chars)
+
+
+def moving_signal_line(width: int, tick: int, packets: int = 3) -> str:
+    if width <= 0:
+        return ""
+    chars = ["-"] * width
+    for packet in range(max(1, packets)):
+        pos = (tick * (packet + 2) + packet * 11) % width
+        chars[pos] = ">"
+        if pos > 0:
+            chars[pos - 1] = "="
+        if pos + 1 < width:
+            chars[pos + 1] = "="
+    return "".join(chars)
+
+
+def edge_glyph_lines(entries: list[WallEntry], tick: int, count: int, width: int = 22) -> list[str]:
+    stream = digest_stream(entries)
+    glyphs = "0123456789ABCDEF"
+    lines: list[str] = []
+    for row in range(max(0, count)):
+        chars = []
+        for col in range(width):
+            source = stream[(tick + row * 7 + col * 5) % len(stream)]
+            chars.append(glyphs[(ord(source) + tick + row + col) % len(glyphs)])
+        marker = ">>" if row % 4 == tick % 4 else "  "
+        lines.append(f"{marker}{''.join(chars)}")
+    return lines
 
 
 def digest_stream(entries: list[WallEntry], fallback: str = "OPS") -> str:
@@ -237,6 +272,93 @@ def protocol_tape_lines(entries: list[WallEntry], tick: int, count: int, width: 
     return lines
 
 
+def sync_scope_lines(entries: list[WallEntry], tick: int, count: int, width: int = 40) -> list[str]:
+    if not entries:
+        return ["NO PILOT SYNC TELEMETRY"]
+    lines: list[str] = []
+    for row in range(max(0, count)):
+        entry = entries[row % len(entries)]
+        flux = sync_flux(entry, tick + row)
+        label = trim_line(entry.label, 12).ljust(12)
+        trace_width = max(8, width - 32)
+        trace = moving_signal_line(trace_width, tick + row, packets=max(1, entry.background_jobs + 1))
+        lines.append(trim_line(f"{label} {flux:03d}% {compact_meter(flux, 8)} {trace}", width))
+    return lines
+
+
+def radial_scanner_lines(entry: WallEntry, tick: int, width: int = 68, height: int = 19) -> list[str]:
+    width = max(25, width)
+    height = max(9, height)
+    cx = width // 2
+    cy = height // 2
+    radius_x = max(6, width // 3)
+    radius_y = max(3, height // 3)
+    chars: list[list[str]] = []
+    flux = sync_flux(entry, tick)
+    for y in range(height):
+        row: list[str] = []
+        for x in range(width):
+            dx = (x - cx) / radius_x
+            dy = (y - cy) / radius_y
+            dist = dx * dx + dy * dy
+            ch = "." if (x + y * 2 + tick) % 3 == 0 else ":"
+            if abs(dist - 1.0) < 0.12:
+                ch = "O"
+            elif abs(dist - 0.48) < 0.08:
+                ch = "o"
+            elif abs(dist - 0.18) < 0.05:
+                ch = "+"
+            if y == cy:
+                ch = "-"
+            if x == cx:
+                ch = "|"
+            if abs((x - cx) - (y - cy) * 2) <= 0:
+                ch = "/"
+            if abs((x - cx) + (y - cy) * 2) <= 0:
+                ch = "\\"
+            sweep = (x + y * 2 - tick) % 9
+            if sweep == 0 and 0.12 < dist < 1.12:
+                ch = "#"
+            row.append(ch)
+        chars.append(row)
+
+    for blip in range(4):
+        angle = math.radians((tick * 19 + blip * 90) % 360)
+        x = max(0, min(width - 1, round(cx + math.cos(angle) * radius_x)))
+        y = max(0, min(height - 1, round(cy + math.sin(angle) * radius_y)))
+        chars[y][x] = ">"
+
+    label = f" UNIT LOCK {entry.label.upper()} "
+    sync_label = f" PILOT SYNC {flux:03d}% // {power_state(entry)} // {authority_state(entry.snapshot)} "
+    center = cy
+    for offset, text in [(-1, label), (1, sync_label)]:
+        row_idx = center + offset
+        if 0 <= row_idx < len(chars):
+            row = chars[row_idx]
+            start = max(0, (width - len(text)) // 2)
+            for idx, char in enumerate(text[:width]):
+                if start + idx < width:
+                    row[start + idx] = char
+
+    packets = moving_signal_line(width, tick, packets=max(2, entry.background_jobs + 1))
+    if height > 2:
+        chars[1] = list(packets)
+        chars[-2] = list(packets[::-1])
+    return [trim_art_line("".join(line), width) for line in chars]
+
+
+def corner_timer_blocks(entries: list[WallEntry], tick: int, now: float | None = None) -> list[str]:
+    observed = time.time() if now is None else now
+    grid = power_grid(entries)
+    worst_idle = max((entry.snapshot.idle_seconds for entry in entries), default=0)
+    return [
+        f"TIME REMAINING TO HEARTBEAT  {protocol_eta(observed).replace('NEXT COMMAND PROTOCOL ', '')}",
+        f"TIME SINCE MAX SIGNAL        {format_duration(worst_idle).upper()}",
+        f"AUXILIARY PROCESS COUNT      {grid['background_jobs']:03d}",
+        f"SYNC FLUX SAMPLE             {((grid['avg_sync'] + tick * 7) % 101):03d}",
+    ]
+
+
 def trim_line(line: str, width: int) -> str:
     line = CONTROL_ESCAPE_RE.sub(" ", line)
     line = "".join(char if ord(char) >= 32 else " " for char in line)
@@ -244,6 +366,14 @@ def trim_line(line: str, width: int) -> str:
     if len(line) <= width:
         return line
     return line[: max(0, width - 3)].rstrip() + "..."
+
+
+def trim_art_line(line: str, width: int) -> str:
+    line = CONTROL_ESCAPE_RE.sub(" ", line)
+    line = "".join(char if ord(char) >= 32 else " " for char in line)
+    if len(line) <= width:
+        return line.ljust(width)
+    return line[:width]
 
 
 def tail_lines(text: str, limit: int = 8, width: int = 86) -> list[str]:
@@ -612,13 +742,14 @@ class EvaWall(App[None]):
         for idx, entry in enumerate(self._entries, start=1):
             status = entry.snapshot.status
             label = trim_line(entry.label, 24)
+            flux = sync_flux(entry, self._tick)
             if entry.session == self._focus_session:
                 label = "> " + label
             table.add_row(
                 unit_id(idx),
                 Text(label, style="bold white" if entry.session == self._focus_session else "white"),
                 Text(status.upper(), style=STATUS_STYLES.get(status, "white")),
-                Text(meter(entry.sync, 10), style=STATUS_STYLES.get(status, "white")),
+                Text(meter(flux, 10), style=STATUS_STYLES.get(status, "white")),
                 Text(power_state(entry), style=f"bold {ORANGE}" if entry.background_jobs else "white"),
                 trim_line(authority_state(entry.snapshot), 22),
             )
@@ -639,6 +770,11 @@ class EvaWall(App[None]):
         bus.append("LOW-LEVEL REGISTER TRACE\n", style=f"bold {ORANGE}")
         for line in dense_register_lines(digest_stream(self._entries), self._tick, count=12, prefix="MCR"):
             bus.append(line + "\n", style=f"dim {CREAM}")
+        bus.append(hazard_bar(58, self._tick + 3) + "\n", style=f"bold {HOT_RED}")
+        bus.append("SIGNAL ROUTING // LIVE PACKET PATHS\n", style=f"bold {ORANGE}")
+        for idx, line in enumerate(edge_glyph_lines(self._entries, self._tick, count=8, width=54)):
+            packet = moving_signal_line(22, self._tick + idx, packets=2)
+            bus.append(trim_line(f"{line} {packet}", 84) + "\n", style=f"dim {DIM_GREEN}")
 
         return Panel(Group(table, bus), title="UNIT MATRIX", border_style=PANEL_RED, box=box.SQUARE)
 
@@ -663,7 +799,7 @@ class EvaWall(App[None]):
         header.add_row(target, Text(status.upper(), style=STATUS_STYLES.get(status, "white")))
         header.add_row(
             Text(entry.snapshot.reason, style="white"),
-            Text(meter(entry.sync, 14), style=STATUS_STYLES.get(status, "white")),
+            Text(meter(sync_flux(entry, self._tick), 14), style=STATUS_STYLES.get(status, "white")),
         )
         header.add_row(
             Text(f"IDLE {format_duration(entry.snapshot.idle_seconds)}", style=f"dim {ORANGE}"),
@@ -671,6 +807,10 @@ class EvaWall(App[None]):
         )
 
         body = Text()
+        body.append("\nBORDER-FIELD RADIAL SCANNER\n", style=f"bold {HOT_RED}")
+        for line in radial_scanner_lines(entry, self._tick, width=68, height=19):
+            body.append("  " + line + "\n", style=f"bold {GREEN}")
+
         body.append("\n")
         for idx, line in enumerate(sync_lattice_lines(entry, self._tick)):
             style = f"bold {ORANGE}" if idx == 0 else f"dim {CREAM}"
@@ -719,6 +859,19 @@ class EvaWall(App[None]):
         lines.append(f"AUX JOBS    {grid['background_jobs']:02d}\n", style=f"bold {ORANGE}")
         lines.append(f"AUTH WAIT   {grid['waiting_auth']:02d}\n", style=STATUS_STYLES["waiting"])
         lines.append(f"FAULTS      {grid['faults']:02d}\n", style=STATUS_STYLES["error"] if grid["faults"] else "white")
+
+        lines.append("\nCORNER TIMERS\n", style=f"bold {ORANGE}")
+        for line in corner_timer_blocks(self._entries, self._tick):
+            lines.append(trim_line(line, 48) + "\n", style=f"bold {HOT_RED}")
+
+        lines.append("\nGLYPH BUS L/R\n", style=f"bold {ORANGE}")
+        glyphs = edge_glyph_lines(self._entries, self._tick, count=10, width=18)
+        for line in glyphs:
+            lines.append(line + "\n", style=f"dim {DIM_GREEN}")
+
+        lines.append("\nPILOT SYNC FLUX SCOPE\n", style=f"bold {ORANGE}")
+        for line in sync_scope_lines(self._entries, self._tick, count=8, width=40):
+            lines.append(line + "\n", style=f"dim {GREEN}")
 
         lines.append("\nCOMMAND LOG\n", style=f"bold {ORANGE}")
         for line in protocol_log_lines(self._entries, self._tick, limit=9):

@@ -5,22 +5,29 @@ from tmux_dash.eva import (
     background_job_count,
     border_field_lines,
     compact_meter,
+    corner_timer_blocks,
     diagnostic_bus_lines,
     digest_stream,
+    edge_glyph_lines,
     meter,
     limiter_check_lines,
+    moving_signal_line,
     operation_mode,
     phase_for,
     power_state,
     protocol_tape_lines,
     protocol_log_lines,
     protocol_eta,
+    radial_scanner_lines,
     scanline,
     dense_register_lines,
+    sync_scope_lines,
+    sync_flux,
     sync_lattice_lines,
     sync_percent,
     tail_lines,
     tri_core_votes,
+    trim_art_line,
     unit_id,
 )
 from tmux_dash.eva import wall_sessions
@@ -92,12 +99,36 @@ def test_compact_meter_clamps_without_label() -> None:
     assert compact_meter(-10, width=5) == "....."
 
 
+def test_sync_flux_stays_bounded() -> None:
+    entry = make_entry("active")
+
+    assert 0 <= sync_flux(entry, tick=100) <= 100
+
+
 def test_unit_id_formats_unit_numbers() -> None:
     assert unit_id(3) == "UNIT-03"
 
 
 def test_scanline_marks_sweep_position() -> None:
     assert scanline(6, tick=2) == ".=>=.."
+
+
+def test_moving_signal_line_marks_packets() -> None:
+    line = moving_signal_line(12, tick=1, packets=2)
+
+    assert len(line) == 12
+    assert ">" in line
+
+
+def test_edge_glyph_lines_have_motion_markers() -> None:
+    lines = edge_glyph_lines([make_entry("active")], tick=1, count=3, width=8)
+
+    assert len(lines) == 3
+    assert all(len(line) == 10 for line in lines)
+
+
+def test_trim_art_line_preserves_scope_spacing() -> None:
+    assert trim_art_line("A   B", 8) == "A   B   "
 
 
 def test_tail_lines_trims_recent_nonempty_lines() -> None:
@@ -201,6 +232,30 @@ def test_protocol_tape_lines_repeats_log_to_target_count() -> None:
 
     assert len(lines) == 4
     assert all(line.startswith((">>", "::")) for line in lines)
+
+
+def test_radial_scanner_lines_include_unit_and_sync() -> None:
+    lines = radial_scanner_lines(make_entry("active"), tick=1, width=40, height=11)
+
+    assert len(lines) == 11
+    assert all(len(line) == 40 for line in lines)
+    assert any("UNIT LOCK" in line for line in lines)
+    assert any("PILOT SYNC" in line for line in lines)
+
+
+def test_sync_scope_lines_show_flux_and_packets() -> None:
+    lines = sync_scope_lines([make_entry("active")], tick=1, count=2, width=40)
+
+    assert len(lines) == 2
+    assert any("%" in line and ">" in line for line in lines)
+
+
+def test_corner_timer_blocks_include_heartbeat_and_aux() -> None:
+    entry = make_entry("active")
+    blocks = corner_timer_blocks([entry], tick=1, now=590)
+
+    assert any("TIME REMAINING" in line for line in blocks)
+    assert any("AUXILIARY" in line for line in blocks)
 
 
 def test_wall_sessions_excludes_current_tmux_session() -> None:

@@ -152,12 +152,17 @@ uses an original black/red/orange/green command-system theme and renders:
 - A focused unit diagnostic panel with a derived signal waveform, recent
   terminal signal, active Codex markers, link-lattice rows, and auxiliary
   background-job count.
+- A dense border-field scanner around the focused unit with moving packet paths,
+  radar-style blips, and fluctuating pilot-sync values derived from each session
+  digest.
 - Limiter checks, register-noise rows, and border-field maps that are generated
   from session digests to keep tall monitor layouts filled.
 - A tri-core decision panel that votes from logic, ops, and link perspectives.
 - A command-protocol countdown based on the heartbeat cadence.
 - A command log derived from current session status and auxiliary job state.
 - A repeating protocol tape for dense right-rail telemetry.
+- Edge glyph buses, pilot-sync flux scope traces, and corner timer blocks for
+  continuous motion cues.
 - An alert cascade for non-active sessions and active background-job markers.
 
 The focused unit rotates every 15 seconds, while `n` can still advance it
