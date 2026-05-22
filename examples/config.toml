@@ -18,6 +18,10 @@ exclude = ["orch"]
 # Pane to swap other session panes into when pressing 1-9.
 orch_target = "orch:0.0"
 
+# Seconds to wait for optional Codex card summaries before keeping the local
+# terminal-line fallback.
+summary_timeout = 12
+
 [orchestrator]
 enabled = true
 target = "orch:0.0"

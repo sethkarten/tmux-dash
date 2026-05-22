@@ -17,8 +17,8 @@ cascades, sync meters, and command-protocol timing.
 - Python 3.12+
 - tmux
 - `uv` or another Python package installer
-- Optional: `codex` CLI for AI summaries. Without it, `tmux-dash` falls back to
-  recent terminal lines.
+- Optional: `codex` CLI for richer AI summaries. Cards show an immediate local
+  summary from recent terminal lines first, then replace it when Codex returns.
 
 ## Install
 
@@ -57,6 +57,7 @@ Useful config fields:
 agent_order = ["programBench", "emulatorBench", "FLE"]
 exclude = ["orch"]
 orch_target = "orch:0.0"
+summary_timeout = 12
 
 [orchestrator]
 enabled = true

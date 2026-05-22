@@ -41,7 +41,7 @@ flowchart LR
 | Feature | Status | Owner |
 | --- | --- | --- |
 | Live cards for tmux sessions | Current | `tmux-dash` |
-| Optional AI summaries from recent pane output | Current | `tmux-dash` + `codex` CLI |
+| Immediate local summaries plus optional AI summaries from recent pane output | Current | `tmux-dash` + optional `codex` CLI |
 | Swap a session into the orchestrator pane | Current | `tmux-dash` |
 | Restore the orchestrator pane | Current | `tmux-dash` |
 | Manual message sending to a session | Current | `tmux-dash` |

@@ -6,6 +6,7 @@ import os
 import random
 import re
 import subprocess
+import tempfile
 import time
 import tomllib
 from concurrent.futures import ThreadPoolExecutor
@@ -115,6 +116,7 @@ ORCH_MONITOR_CONFIG = StatusConfig(
 )
 
 SUMMARY_TTL  = _config_float(_CONFIG.get("summary_ttl"), 30.0)
+SUMMARY_TIMEOUT = _config_float(_CONFIG.get("summary_timeout"), 12.0)
 REFRESH_SECS = _config_float(_CONFIG.get("refresh_secs"), 5.0)
 HEARTBEAT_ENABLED = _config_bool(_ORCH_CONFIG.get("enabled"), False)
 HEARTBEAT_SECS = _config_float(_ORCH_CONFIG.get("heartbeat_secs"), 600.0)
@@ -462,9 +464,25 @@ def _guard_active_summary(raw: str, summary: str) -> str:
     return summary
 
 
+def _fallback_summary(raw: str) -> str:
+    if CODEX_ACTIVE_RE.search(raw):
+        return _active_marker_summary(raw)
+    lines = []
+    for line in raw.splitlines():
+        clean = _ansi.sub("", line).strip()
+        if not clean or clean in {"·", "…"} or _CODEX_NOISE.search(clean):
+            continue
+        lines.append(clean)
+    if not lines:
+        return "No recent pane output."
+    summary = "  ".join(lines[-2:])
+    return summary if len(summary) <= 160 else summary[:157].rstrip() + "..."
+
+
 def _summarize_sync(session: str, raw: str) -> str:
     h   = hashlib.md5(raw.encode()).hexdigest()
     now = time.time()
+    fallback = _fallback_summary(raw)
     if session in _cache:
         ts, cached_hash, summary = _cache[session]
         summary = _guard_active_summary(raw, summary)
@@ -484,22 +502,29 @@ def _summarize_sync(session: str, raw: str) -> str:
         f"<terminal>\n{raw[-2000:]}\n</terminal>"
     )
     try:
-        r = subprocess.run(
-            ["codex", "exec", "-s", "read-only", "-c", "reasoning_effort=low", prompt],
-            capture_output=True, text=True, timeout=60,
-        )
-        # Response is repeated after "tokens used\n<count>\n"
-        m = re.search(r'tokens used\s*\n[\d,]+\s*\n(.*)', r.stdout, re.DOTALL)
-        if m:
-            summary = m.group(1).strip()
-        else:
-            # Fallback: strip header noise and take last meaningful line
-            clean = _CODEX_NOISE.sub('', r.stdout)
-            lines = [l.strip() for l in clean.splitlines() if l.strip()]
-            summary = lines[-1] if lines else "·"
+        with tempfile.NamedTemporaryFile("r+", encoding="utf-8") as output:
+            subprocess.run(
+                [
+                    "codex",
+                    "exec",
+                    "--ephemeral",
+                    "-s",
+                    "read-only",
+                    "-c",
+                    "model_reasoning_effort=low",
+                    "-o",
+                    output.name,
+                    prompt,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=SUMMARY_TIMEOUT,
+                check=True,
+            )
+            output.seek(0)
+            summary = output.read().strip() or fallback
     except Exception:
-        lines = [l for l in raw.splitlines() if l.strip()]
-        summary = "  ".join(lines[-2:]) if lines else "·"
+        summary = fallback
     summary = _guard_active_summary(raw, summary)
     _cache[session] = (now, h, summary)
     return summary
@@ -1425,6 +1450,7 @@ class SessionCard(Static):
         self.monitor = monitor
         self._last_raw = ""
         self._last_summary_at = 0.0
+        self._summary_inflight = False
         if session in SUBSESSIONS:
             self.add_class("sub")
 
@@ -1463,11 +1489,21 @@ class SessionCard(Static):
         self.status_reason = snapshot.reason
         self.idle_seconds = snapshot.idle_seconds
         now = time.time()
+        fallback = _fallback_summary(raw)
+        if raw != self._last_raw or self.summary in {"…", "·"}:
+            self.summary = fallback
         if raw == self._last_raw and now - self._last_summary_at < SUMMARY_TTL:
             return
+        if self._summary_inflight:
+            return
         self._last_raw = raw
-        self.summary = await summarize(self.session_name, raw)
-        self._last_summary_at = time.time()
+        self._last_summary_at = now
+        self._summary_inflight = True
+        try:
+            self.summary = await summarize(self.session_name, raw)
+        finally:
+            self._summary_inflight = False
+            self._last_summary_at = time.time()
 
 
 class MsgModal(ModalScreen):
