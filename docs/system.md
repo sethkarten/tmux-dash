@@ -75,6 +75,7 @@ sequenceDiagram
         Timer->>Tmux: capture recent output from non-orch sessions
         Timer->>Detector: classify active, idle, waiting, blocked, error
         Detector->>Ledger: append snapshot
+        Timer->>Tmux: restore/resolve saved orchestrator pane id
         Timer->>Orch: inject heartbeat prompt with summaries and state
         Orch->>User: print progress update and recommended next actions
         User->>Orch: approve or edit proposed messages
@@ -95,7 +96,9 @@ sequenceDiagram
 - Treat Codex `Working`, `Pursuing goal`, and background-job markers as active
   work even when the visible pane text is stable.
 - Record heartbeat snapshots to a local JSONL progress ledger.
-- Inject a concise status prompt into `orch:0.0` on a configurable interval.
+- Resolve the saved original orchestrator pane, restore it into `orch:0.0` if an
+  agent is swapped in, and inject a concise status prompt into that resolved
+  pane id on a configurable interval.
 - Avoid injecting while the orchestrator pane appears busy, unless manually
   triggered.
 

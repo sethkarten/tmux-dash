@@ -115,6 +115,11 @@ from non-orchestrator sessions every `heartbeat_secs`, classifies each session
 as `active`, `idle`, `waiting`, `blocked`, or `error`, writes a JSONL snapshot,
 and injects a prompt into the orchestrator pane.
 
+Before injecting, `tmux-dash` resolves the saved original orchestrator pane,
+restores it into `orch:0.0` if an agent is currently swapped into that slot, and
+then pastes into the resolved pane id. This keeps heartbeats from landing in a
+swapped-in agent session.
+
 Session cards, heartbeat snapshots, and manual messages target each agent's
 main Codex pane (`session:0.0`) instead of tmux's currently active pane. If an
 agent is swapped into the orchestrator view, `tmux-dash` reads that displayed

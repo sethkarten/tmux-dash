@@ -386,6 +386,19 @@ def send_keys(session: str, text: str) -> None:
     subprocess.run(["tmux", "send-keys", "-t", target, text, ""], capture_output=True)
 
 
+def orchestrator_capture_target() -> str:
+    return _orchestrator_pane() or ORCH_TARGET
+
+
+def heartbeat_send_target() -> tuple[str | None, str]:
+    if not restore_orchestrator():
+        return None, "could not restore orchestrator"
+    pane_id = _pane_id(ORCH_TARGET)
+    if pane_id is None:
+        return None, f"could not resolve {ORCH_TARGET}"
+    return pane_id, f"{ORCH_TARGET} ({pane_id})"
+
+
 def send_text_to_pane(target: str, text: str, submit_keys: list[str] | None = None) -> tuple[bool, str]:
     """Paste multiline text into a tmux pane and submit it."""
 
@@ -1599,7 +1612,7 @@ class Dash(App):
         return snapshots
 
     def _observe_orchestrator(self) -> SessionSnapshot:
-        raw = capture(ORCH_TARGET, 80)
+        raw = capture(orchestrator_capture_target(), 80)
         return self._orch_monitor.observe("orchestrator", raw)
 
     def _orchestrator_is_quiet(self) -> tuple[bool, str]:
@@ -1650,11 +1663,19 @@ class Dash(App):
                 self.notify(f"Heartbeat skipped: {reason}", timeout=4)
                 return
 
-        sent, detail = await asyncio.to_thread(send_text_to_pane, ORCH_TARGET, prompt, HEARTBEAT_SUBMIT_KEYS)
+        send_target, target_label = await asyncio.to_thread(heartbeat_send_target)
+        event["resolved_target"] = target_label
+        if send_target is None:
+            event.update({"injected": False, "reason": target_label})
+            await asyncio.to_thread(append_ledger, HEARTBEAT_LEDGER_PATH, event)
+            self.notify(f"Heartbeat failed: {target_label}", severity="error", timeout=5)
+            return
+
+        sent, detail = await asyncio.to_thread(send_text_to_pane, send_target, prompt, HEARTBEAT_SUBMIT_KEYS)
         event.update({"injected": sent, "reason": detail})
         await asyncio.to_thread(append_ledger, HEARTBEAT_LEDGER_PATH, event)
         if sent:
-            self.notify(f"Heartbeat sent to {ORCH_TARGET}", timeout=3)
+            self.notify(f"Heartbeat sent to {target_label}", timeout=3)
         else:
             self.notify(f"Heartbeat failed: {detail}", severity="error", timeout=5)
 

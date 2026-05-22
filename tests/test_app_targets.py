@@ -1,3 +1,5 @@
+import asyncio
+
 from tmux_dash import app
 
 
@@ -66,6 +68,68 @@ def test_restore_orchestrator_recovers_from_missing_swap_flag(monkeypatch) -> No
     assert current["orch:0.0"] == "%239"
     assert options[app.ORCH_PANE_OPT] == "%239"
     assert app.SWAPPED_SESSION_OPT not in options
+
+
+def test_orchestrator_capture_target_uses_saved_pane(monkeypatch) -> None:
+    monkeypatch.setattr(app, "_orchestrator_pane", lambda: "%239")
+
+    assert app.orchestrator_capture_target() == "%239"
+
+
+def test_heartbeat_send_target_restores_before_resolving(monkeypatch) -> None:
+    restored = []
+
+    def fake_restore() -> bool:
+        restored.append(True)
+        return True
+
+    monkeypatch.setattr(app, "ORCH_TARGET", "orch:0.0")
+    monkeypatch.setattr(app, "restore_orchestrator", fake_restore)
+    monkeypatch.setattr(app, "_pane_id", lambda target: "%239" if target == "orch:0.0" else None)
+
+    target, label = app.heartbeat_send_target()
+
+    assert restored
+    assert target == "%239"
+    assert label == "orch:0.0 (%239)"
+
+
+def test_heartbeat_send_target_reports_restore_failure(monkeypatch) -> None:
+    monkeypatch.setattr(app, "restore_orchestrator", lambda: False)
+
+    target, label = app.heartbeat_send_target()
+
+    assert target is None
+    assert label == "could not restore orchestrator"
+
+
+def test_heartbeat_sends_to_resolved_orchestrator_pane(monkeypatch) -> None:
+    dash = app.Dash()
+    sent = {}
+    ledger_events = []
+
+    monkeypatch.setattr(dash, "_collect_snapshots", lambda: [])
+    monkeypatch.setattr(dash, "_cached_summaries", lambda snapshots: {})
+    monkeypatch.setattr(app, "heartbeat_send_target", lambda: ("%239", "orch:0.0 (%239)"))
+    monkeypatch.setattr(dash, "notify", lambda *args, **kwargs: None)
+
+    def fake_send_text(target, prompt, submit_keys):
+        sent["target"] = target
+        sent["prompt"] = prompt
+        sent["submit_keys"] = submit_keys
+        return True, "sent"
+
+    def fake_append(path, event):
+        ledger_events.append(event)
+
+    monkeypatch.setattr(app, "send_text_to_pane", fake_send_text)
+    monkeypatch.setattr(app, "append_ledger", fake_append)
+
+    asyncio.run(dash._run_heartbeat(force=True))
+
+    assert sent["target"] == "%239"
+    assert ledger_events[-1]["target"] == app.ORCH_TARGET
+    assert ledger_events[-1]["resolved_target"] == "orch:0.0 (%239)"
 
 
 def test_guard_active_summary_replaces_idle_claim() -> None:
