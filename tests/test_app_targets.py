@@ -64,6 +64,19 @@ def test_summarize_sync_uses_low_reasoning_key(monkeypatch) -> None:
     assert seen["timeout"] == app.SUMMARY_TIMEOUT
 
 
+def test_summarize_sync_skips_codex_for_empty_capture(monkeypatch) -> None:
+    app._cache.clear()
+
+    def fake_run(args, **kwargs):
+        raise AssertionError("codex should not run for empty captures")
+
+    monkeypatch.setattr(app.subprocess, "run", fake_run)
+
+    summary = app._summarize_sync("agent-empty", "·")
+
+    assert summary == "No recent pane output."
+
+
 def test_summarize_sync_falls_back_on_timeout(monkeypatch) -> None:
     app._cache.clear()
 

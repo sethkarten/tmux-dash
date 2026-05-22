@@ -483,6 +483,9 @@ def _summarize_sync(session: str, raw: str) -> str:
     h   = hashlib.md5(raw.encode()).hexdigest()
     now = time.time()
     fallback = _fallback_summary(raw)
+    if fallback == "No recent pane output.":
+        _cache[session] = (now, h, fallback)
+        return fallback
     if session in _cache:
         ts, cached_hash, summary = _cache[session]
         summary = _guard_active_summary(raw, summary)
