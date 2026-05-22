@@ -326,13 +326,15 @@ def _orchestrator_pane() -> str | None:
     current_pane = _pane_id(ORCH_TARGET)
     swapped = _swapped_session()
     pane_id = _tmux_out(["show-options", "-gqv", ORCH_PANE_OPT])
-    if swapped and pane_id and _pane_exists(pane_id):
-        return pane_id
-    if swapped and pane_id and not _pane_exists(pane_id):
+
+    if pane_id and _pane_exists(pane_id):
+        if current_pane != pane_id:
+            return pane_id
+        return current_pane
+    if pane_id:
         _clear_tmux_option(ORCH_PANE_OPT)
-        _clear_tmux_option(SWAPPED_SESSION_OPT)
         pane_id = ""
-        swapped = None
+
     if swapped and not pane_id:
         pane_id = _pane_id(f"{swapped}:0.0")
         if pane_id:
@@ -353,11 +355,13 @@ def restore_orchestrator() -> bool:
         return False
     if current_pane == orchestrator_pane:
         _clear_tmux_option(SWAPPED_SESSION_OPT)
+        _set_tmux_option(ORCH_PANE_OPT, current_pane)
         return True
     result = _tmux(["swap-pane", "-d", "-s", orchestrator_pane, "-t", ORCH_TARGET])
     if result.returncode != 0:
         return False
     _clear_tmux_option(SWAPPED_SESSION_OPT)
+    _set_tmux_option(ORCH_PANE_OPT, orchestrator_pane)
     return True
 
 

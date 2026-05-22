@@ -20,6 +20,54 @@ def test_agent_pane_target_uses_orchestrator_view_when_swapped(monkeypatch) -> N
     assert app.agent_pane_target("programBench") == "orch:0.0"
 
 
+def test_orchestrator_pane_prefers_saved_pane_when_swap_flag_missing(monkeypatch) -> None:
+    monkeypatch.setattr(app, "ORCH_TARGET", "orch:0.0")
+    monkeypatch.setattr(app, "_pane_id", lambda target: "%233" if target == "orch:0.0" else target)
+    monkeypatch.setattr(app, "_pane_exists", lambda target: target in {"%233", "%239"})
+    monkeypatch.setattr(
+        app,
+        "_tmux_out",
+        lambda args: "%239" if args[-1] == app.ORCH_PANE_OPT else "",
+    )
+
+    assert app._orchestrator_pane() == "%239"
+
+
+def test_restore_orchestrator_recovers_from_missing_swap_flag(monkeypatch) -> None:
+    monkeypatch.setattr(app, "ORCH_TARGET", "orch:0.0")
+    options = {app.ORCH_PANE_OPT: "%239"}
+    current = {"orch:0.0": "%233"}
+    calls = []
+
+    def fake_tmux_out(args):
+        if args[:2] == ["show-options", "-gqv"]:
+            return options.get(args[-1], "")
+        return ""
+
+    def fake_pane_id(target):
+        return current.get(target, target if target in {"%233", "%239"} else None)
+
+    def fake_tmux(args):
+        calls.append(args)
+        if args[:2] == ["swap-pane", "-d"]:
+            current["orch:0.0"] = "%239"
+        return app.subprocess.CompletedProcess(["tmux", *args], 0, "", "")
+
+    monkeypatch.setattr(app, "_tmux_out", fake_tmux_out)
+    monkeypatch.setattr(app, "_pane_id", fake_pane_id)
+    monkeypatch.setattr(app, "_pane_exists", lambda target: target in {"%233", "%239"})
+    monkeypatch.setattr(app, "_tmux", fake_tmux)
+    monkeypatch.setattr(app, "_set_tmux_option", lambda name, value: options.__setitem__(name, value))
+    monkeypatch.setattr(app, "_clear_tmux_option", lambda name: options.pop(name, None))
+    monkeypatch.setattr(app, "_close_visible_terminal", lambda: None)
+
+    assert app.restore_orchestrator()
+    assert ["swap-pane", "-d", "-s", "%239", "-t", "orch:0.0"] in calls
+    assert current["orch:0.0"] == "%239"
+    assert options[app.ORCH_PANE_OPT] == "%239"
+    assert app.SWAPPED_SESSION_OPT not in options
+
+
 def test_guard_active_summary_replaces_idle_claim() -> None:
     raw = "Counts: 38 rows, 0 errors\n• Working (1h 52m) · 2 background jobs"
     summary = "The agent is not showing an active command or background job; it is at a zsh prompt."
