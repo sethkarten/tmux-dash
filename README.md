@@ -70,6 +70,12 @@ ledger_path = "~/.local/state/tmux-dash/orchestrator.jsonl"
 gameboy-dmg-codex = "emulatorBench"
 ```
 
+Explicit subsession config is optional for common prefixed session names. If a
+session name normalizes to a configured parent prefix, such as
+`emulatorbench_dmg_glm51_rlm_20260522` under `emulatorBench`, `tmux-dash`
+automatically renders it as a child session. Explicit `[subsessions]` entries
+still take precedence.
+
 You can also point at a one-off config:
 
 ```bash
@@ -80,8 +86,9 @@ TMUX_DASH_CONFIG=/path/to/config.toml tmux-dash
 
 - `0`: restore the orchestrator pane
 - `1`-`9`: swap a session into the orchestrator pane
-- `t` then `1`-`9`: open a side terminal below that agent's Codex pane
-- `m` then `1`-`9`: send a message to that session
+- `g` then a session number: swap any numbered session, including `10+`
+- `t` then a session number: open a side terminal below that agent's Codex pane
+- `m` then a session number: send a message to that session
 - `h`: send a heartbeat prompt to the orchestrator pane now
 - `b`: open the screensaver
 - `r`: refresh

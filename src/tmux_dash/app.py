@@ -12,7 +12,7 @@ import tomllib
 from concurrent.futures import ThreadPoolExecutor
 from importlib.resources import files
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 from rich.color import Color
 from rich.style import Style
@@ -100,6 +100,9 @@ SUBSESSIONS: dict[str, str] = _string_map(_CONFIG.get("subsessions"))
 EXCLUDE: set[str] = set(_string_list(_CONFIG.get("exclude"), ["orch"]))
 ORCH_TARGET = str(_ORCH_CONFIG.get("target", _CONFIG.get("orch_target", "orch:0.0")))
 SESSION_LABELS = _session_labels(_CONFIG.get("sessions"))
+PARENT_SESSION_CANDIDATES = tuple(
+    dict.fromkeys([*AGENT_ORDER, *SESSION_LABELS.keys(), *SUBSESSIONS.values()])
+)
 
 IDLE_AFTER_SECS = _config_float(_ORCH_CONFIG.get("idle_after_secs", _STATUS_CONFIG.get("idle_after_secs")), 900.0)
 STATUS_CONFIG = StatusConfig(
@@ -187,6 +190,25 @@ def _fit_ascii_frame(frame: list[str], max_w: int, max_h: int) -> list[str]:
     return rows[:max_h]
 
 
+def _normalize_session_name(name: str) -> str:
+    return "".join(char.lower() for char in name if char.isalnum())
+
+
+def subsession_parent(session: str, parents: Iterable[str] = PARENT_SESSION_CANDIDATES) -> str | None:
+    explicit = SUBSESSIONS.get(session)
+    if explicit:
+        return explicit
+
+    normalized = _normalize_session_name(session)
+    for parent in sorted(dict.fromkeys(parents), key=len, reverse=True):
+        if session == parent:
+            continue
+        parent_normalized = _normalize_session_name(parent)
+        if parent_normalized and normalized.startswith(parent_normalized):
+            return parent
+    return None
+
+
 def get_sessions() -> list[str]:
     try:
         r = subprocess.run(
@@ -197,8 +219,19 @@ def get_sessions() -> list[str]:
     except Exception:
         return []
     ordered = [s for s in AGENT_ORDER if s in active]
-    extra   = sorted(s for s in active if s not in AGENT_ORDER and s not in EXCLUDE and s not in SUBSESSIONS)
-    subs    = sorted(s for s in SUBSESSIONS if s in active)
+    parent_candidates = tuple(dict.fromkeys([*ordered, *PARENT_SESSION_CANDIDATES]))
+    subs = sorted(
+        s
+        for s in active
+        if s not in EXCLUDE and s not in AGENT_ORDER and subsession_parent(s, parent_candidates)
+    )
+    extra = sorted(
+        s
+        for s in active
+        if s not in AGENT_ORDER
+        and s not in EXCLUDE
+        and not subsession_parent(s, parent_candidates)
+    )
     return ordered + extra + subs
 
 
@@ -1428,6 +1461,7 @@ class BounceScreen(Screen):
 CONTROLS = (
     " [cyan][0][/cyan] restore orch  "
     "[cyan][1-9][/cyan] swap  "
+    "[cyan][g+#][/cyan] any #  "
     "[cyan][t+#][/cyan] terminal  "
     "[cyan][m+#][/cyan] message  "
     "[cyan][h][/cyan] heartbeat  "
@@ -1471,11 +1505,11 @@ class SessionCard(Static):
         self._last_raw = ""
         self._last_summary_at = 0.0
         self._summary_inflight = False
-        if session in SUBSESSIONS:
+        if subsession_parent(session):
             self.add_class("sub")
 
     def render(self) -> str:
-        parent = SUBSESSIONS.get(self.session_name)
+        parent = subsession_parent(self.session_name)
         tag = f" [dim](↳ {parent})[/dim]" if parent else ""
         label = SESSION_LABELS.get(self.session_name, self.session_name)
         if label != self.session_name:
@@ -1551,6 +1585,48 @@ class MsgModal(ModalScreen):
         if event.key == "escape":
             self.dismiss()
 
+
+class SessionNumberModal(ModalScreen):
+    DEFAULT_CSS = """
+    SessionNumberModal { align: center middle; }
+    #session-number-box {
+        width: 48;
+        height: 9;
+        border: thick $accent;
+        padding: 1 2;
+        background: $surface;
+    }
+    """
+
+    def __init__(self, action: str, **kwargs):
+        super().__init__(**kwargs)
+        self.action = action
+
+    def compose(self) -> ComposeResult:
+        labels = {
+            "swap": "swap session into orchestrator",
+            "terminal": "open terminal for session",
+            "message": "message session",
+        }
+        with Vertical(id="session-number-box"):
+            yield Static(f"[bold cyan]{labels[self.action]}[/bold cyan]")
+            yield Input(placeholder="session number, e.g. 10")
+
+    @on(Input.Submitted)
+    def submit(self, event: Input.Submitted) -> None:
+        try:
+            number = int(event.value.strip())
+        except ValueError:
+            self.app.notify("Enter a numeric session index", severity="error", timeout=3)
+            return
+        self.dismiss()
+        if isinstance(self.app, Dash):
+            self.app._session_number_action(number, self.action)
+
+    def on_key(self, event: events.Key) -> None:
+        if event.key == "escape":
+            self.dismiss()
+
 # ── App ───────────────────────────────────────────────────────────────────────
 
 class Dash(App):
@@ -1564,8 +1640,6 @@ class Dash(App):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self._sessions: list[str] = []
-        self._pending_msg  = False
-        self._pending_term = False
         self._monitor = SessionMonitor(STATUS_CONFIG)
         self._orch_monitor = SessionMonitor(ORCH_MONITOR_CONFIG)
 
@@ -1679,16 +1753,20 @@ class Dash(App):
         else:
             self.notify(f"Heartbeat failed: {detail}", severity="error", timeout=5)
 
-    def _digit(self, n: int) -> None:
+    def _session_for_number(self, n: int) -> str | None:
         idx = n - 1
         if not (0 <= idx < len(self._sessions)):
+            return None
+        return self._sessions[idx]
+
+    def _session_number_action(self, n: int, action: str) -> None:
+        session = self._session_for_number(n)
+        if session is None:
+            self.notify(f"No session {n}", severity="error", timeout=3)
             return
-        session = self._sessions[idx]
-        if self._pending_msg:
-            self._pending_msg = False
+        if action == "message":
             self.push_screen(MsgModal(session))
-        elif self._pending_term:
-            self._pending_term = False
+        elif action == "terminal":
             restore_orchestrator()
             opened, detail = open_terminal(session)
             if opened:
@@ -1698,6 +1776,9 @@ class Dash(App):
         else:
             if not switch_to(session):
                 self.notify(f"Could not switch to {session}", severity="error", timeout=3)
+
+    def _digit(self, n: int) -> None:
+        self._session_number_action(n, "swap")
 
     def key_0(self) -> None:
         if restore_orchestrator():
@@ -1715,16 +1796,14 @@ class Dash(App):
     def key_8(self): self._digit(8)
     def key_9(self): self._digit(9)
 
+    def key_g(self) -> None:
+        self.push_screen(SessionNumberModal("swap"))
+
     def key_m(self) -> None:
-        self._pending_msg  = False
-        self._pending_term = False
-        self._pending_msg  = True
-        self.notify("Press session number to message…", timeout=2)
+        self.push_screen(SessionNumberModal("message"))
 
     def key_t(self) -> None:
-        self._pending_msg  = False
-        self._pending_term = True
-        self.notify("Press session number to open terminal…", timeout=2)
+        self.push_screen(SessionNumberModal("terminal"))
 
     def key_b(self) -> None:
         self.push_screen(BounceScreen(self._sessions))

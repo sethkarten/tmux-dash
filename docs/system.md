@@ -42,12 +42,12 @@ flowchart LR
 | --- | --- | --- |
 | Live cards for tmux sessions | Current | `tmux-dash` |
 | Immediate local summaries plus optional AI summaries from recent pane output | Current | `tmux-dash` + optional `codex` CLI |
-| Swap a session into the orchestrator pane | Current | `tmux-dash` |
+| Swap any numbered session into the orchestrator pane | Current | `tmux-dash` |
 | Restore the orchestrator pane | Current | `tmux-dash` |
 | Manual message sending to a session | Current | `tmux-dash` |
 | Side terminal split below the displayed Codex pane | Current | `tmux-dash` |
 | Animated screensaver with visible session cards | Current | `tmux-dash` |
-| Configurable session order, exclusions, subsessions, and orchestrator target | Current | `tmux-dash` |
+| Configurable session order, exclusions, explicit and inferred subsessions, and orchestrator target | Current | `tmux-dash` |
 | Idle, blocked, waiting, and error detection | Current | `tmux-dash` |
 | Status badges on session cards | Current | `tmux-dash` |
 | JSONL progress ledger | Current | `tmux-dash` |
@@ -134,8 +134,11 @@ label = "BALROG RL"
 ```
 
 Session metadata is optional and should describe subsessions or agent sessions
-only. The orchestrator remains the place where goals, approvals, and decisions
-are discussed.
+only. The dashboard also infers common child sessions by normalized prefix, so
+`emulatorbench_dmg_glm51_rlm_20260522` is linked under configured parent
+`emulatorBench` without an explicit `[subsessions]` entry. Explicit
+`[subsessions]` entries override inferred parents. The orchestrator remains the
+place where goals, approvals, and decisions are discussed.
 
 ## Second-Monitor Wallboard
 

@@ -55,6 +55,8 @@ label = "BALROG RL"
 label = "Chess DAgger"
 
 # Optional child-session display. These are still normal tmux sessions; this
-# only makes the dashboard render them as children of another session.
+# only makes the dashboard render them as children of another session. Common
+# prefixed names are also auto-linked, so an active session named
+# emulatorbench_dmg_glm51_rlm_20260522 is displayed as a child of emulatorBench.
 [subsessions]
 gameboy-dmg-codex = "emulatorBench"

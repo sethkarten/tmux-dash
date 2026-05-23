@@ -22,6 +22,56 @@ def test_agent_pane_target_uses_orchestrator_view_when_swapped(monkeypatch) -> N
     assert app.agent_pane_target("programBench") == "orch:0.0"
 
 
+def test_subsession_parent_uses_explicit_config(monkeypatch) -> None:
+    monkeypatch.setattr(app, "SUBSESSIONS", {"child": "parent"})
+
+    assert app.subsession_parent("child", parents=()) == "parent"
+
+
+def test_subsession_parent_infers_from_configured_parent(monkeypatch) -> None:
+    monkeypatch.setattr(app, "SUBSESSIONS", {})
+
+    parent = app.subsession_parent(
+        "emulatorbench_dmg_glm51_rlm_20260522",
+        parents=("emulatorBench", "programBench"),
+    )
+
+    assert parent == "emulatorBench"
+
+
+def test_get_sessions_links_auto_subsessions(monkeypatch) -> None:
+    monkeypatch.setattr(app, "AGENT_ORDER", ["programBench", "emulatorBench"])
+    monkeypatch.setattr(app, "SESSION_LABELS", {})
+    monkeypatch.setattr(app, "SUBSESSIONS", {})
+    monkeypatch.setattr(app, "EXCLUDE", {"orch"})
+    monkeypatch.setattr(app, "PARENT_SESSION_CANDIDATES", ("programBench", "emulatorBench"))
+
+    def fake_run(args, **kwargs):
+        return app.subprocess.CompletedProcess(
+            args,
+            0,
+            "orch\nprogramBench\nemulatorBench\nscrapeEnv\nemulatorbench_dmg_rlm\n",
+            "",
+        )
+
+    monkeypatch.setattr(app.subprocess, "run", fake_run)
+
+    assert app.get_sessions() == [
+        "programBench",
+        "emulatorBench",
+        "scrapeEnv",
+        "emulatorbench_dmg_rlm",
+    ]
+
+
+def test_dash_session_for_number_supports_double_digits() -> None:
+    dash = app.Dash()
+    dash._sessions = [f"s{i}" for i in range(1, 12)]
+
+    assert dash._session_for_number(10) == "s10"
+    assert dash._session_for_number(12) is None
+
+
 def test_orchestrator_pane_prefers_saved_pane_when_swap_flag_missing(monkeypatch) -> None:
     monkeypatch.setattr(app, "ORCH_TARGET", "orch:0.0")
     monkeypatch.setattr(app, "_pane_id", lambda target: "%233" if target == "orch:0.0" else target)
