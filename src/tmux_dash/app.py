@@ -97,11 +97,12 @@ _STATUS_CONFIG = _config_dict(_CONFIG.get("status"))
 
 AGENT_ORDER = _string_list(_CONFIG.get("agent_order"), [])
 SUBSESSIONS: dict[str, str] = _string_map(_CONFIG.get("subsessions"))
+SUBSESSION_PREFIXES: dict[str, str] = _string_map(_CONFIG.get("subsession_prefixes"))
 EXCLUDE: set[str] = set(_string_list(_CONFIG.get("exclude"), ["orch"]))
 ORCH_TARGET = str(_ORCH_CONFIG.get("target", _CONFIG.get("orch_target", "orch:0.0")))
 SESSION_LABELS = _session_labels(_CONFIG.get("sessions"))
 PARENT_SESSION_CANDIDATES = tuple(
-    dict.fromkeys([*AGENT_ORDER, *SESSION_LABELS.keys(), *SUBSESSIONS.values()])
+    dict.fromkeys([*AGENT_ORDER, *SESSION_LABELS.keys(), *SUBSESSIONS.values(), *SUBSESSION_PREFIXES.values()])
 )
 
 IDLE_AFTER_SECS = _config_float(_ORCH_CONFIG.get("idle_after_secs", _STATUS_CONFIG.get("idle_after_secs")), 900.0)
@@ -198,6 +199,10 @@ def subsession_parent(session: str, parents: Iterable[str] = PARENT_SESSION_CAND
     explicit = SUBSESSIONS.get(session)
     if explicit:
         return explicit
+
+    for prefix, parent in sorted(SUBSESSION_PREFIXES.items(), key=lambda item: len(item[0]), reverse=True):
+        if session != parent and prefix and session.startswith(prefix):
+            return parent
 
     normalized = _normalize_session_name(session)
     for parent in sorted(dict.fromkeys(parents), key=len, reverse=True):
@@ -1467,7 +1472,7 @@ CONTROLS = (
     "[cyan][h][/cyan] heartbeat  "
     "[cyan][b][/cyan] bounce  "
     "[cyan][r][/cyan] refresh  "
-    "[cyan][q][/cyan] quit"
+    "[cyan][ctrl+q][/cyan] quit"
 )
 
 STATUS_STYLES = {
@@ -1635,7 +1640,7 @@ class Dash(App):
     #controls { height: 1; padding: 0 1; background: $primary-darken-3; dock: top; }
     Grid { grid-size: 2; grid-gutter: 1 1; padding: 1 1; }
     """
-    BINDINGS = [("h", "heartbeat", "Heartbeat"), ("r", "refresh", "Refresh"), ("q", "quit", "Quit")]
+    BINDINGS = [("h", "heartbeat", "Heartbeat"), ("r", "refresh", "Refresh"), ("ctrl+q", "quit", "Quit")]
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

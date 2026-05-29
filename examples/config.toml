@@ -60,3 +60,7 @@ label = "Chess DAgger"
 # emulatorbench_dmg_glm51_rlm_20260522 is displayed as a child of emulatorBench.
 [subsessions]
 gameboy-dmg-codex = "emulatorBench"
+
+# Prefix-based child-session display for shorthand session naming schemes.
+[subsession_prefixes]
+pb_ = "programBench"

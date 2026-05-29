@@ -24,12 +24,21 @@ def test_agent_pane_target_uses_orchestrator_view_when_swapped(monkeypatch) -> N
 
 def test_subsession_parent_uses_explicit_config(monkeypatch) -> None:
     monkeypatch.setattr(app, "SUBSESSIONS", {"child": "parent"})
+    monkeypatch.setattr(app, "SUBSESSION_PREFIXES", {})
 
     assert app.subsession_parent("child", parents=()) == "parent"
 
 
+def test_subsession_parent_uses_prefix_config(monkeypatch) -> None:
+    monkeypatch.setattr(app, "SUBSESSIONS", {})
+    monkeypatch.setattr(app, "SUBSESSION_PREFIXES", {"pb_": "programBench"})
+
+    assert app.subsession_parent("pb_glm51_rlm_20260526", parents=()) == "programBench"
+
+
 def test_subsession_parent_infers_from_configured_parent(monkeypatch) -> None:
     monkeypatch.setattr(app, "SUBSESSIONS", {})
+    monkeypatch.setattr(app, "SUBSESSION_PREFIXES", {})
 
     parent = app.subsession_parent(
         "emulatorbench_dmg_glm51_rlm_20260522",
@@ -43,6 +52,7 @@ def test_get_sessions_links_auto_subsessions(monkeypatch) -> None:
     monkeypatch.setattr(app, "AGENT_ORDER", ["programBench", "emulatorBench"])
     monkeypatch.setattr(app, "SESSION_LABELS", {})
     monkeypatch.setattr(app, "SUBSESSIONS", {})
+    monkeypatch.setattr(app, "SUBSESSION_PREFIXES", {})
     monkeypatch.setattr(app, "EXCLUDE", {"orch"})
     monkeypatch.setattr(app, "PARENT_SESSION_CANDIDATES", ("programBench", "emulatorBench"))
 

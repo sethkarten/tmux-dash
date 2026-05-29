@@ -29,6 +29,7 @@ classifiers = [
 [project.scripts]
 tmux-dash = "tmux_dash.app:main"
 tmux-eva = "tmux_dash.eva:main"
+restore-codex-orch = "tmux_dash.restore_codex_orch:main"
 
 [dependency-groups]
 dev = [
